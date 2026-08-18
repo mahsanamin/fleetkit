@@ -11,7 +11,7 @@
 # running before.
 #
 # Without the agent installed IN the guest, snapshot mode cannot freeze anything and you get
-# a crash-consistent image. See docs/qemu-guest-agent.md.
+# a crash-consistent image. See docs/gotchas.md.
 #
 #   ./desk-image.sh --vmid 150                    # image VM 150 to 'local'
 #   ./desk-image.sh --vmid 150 --storage backups

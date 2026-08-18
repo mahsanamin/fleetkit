@@ -114,7 +114,7 @@ cat <<NEXT
 NEXT:
   qm start $VMID                      # if not started already
   # then, in the guest's console or over RDP once it has an address:
-  sudo desk-claim ${PERSON:-<username>} "<Full Name>"
+  sudo desk-claim ${PERSON:-<person>}
 
 A fresh restore/clone still carries the SOURCE's machine-id, SSH host keys, RDP
 credentials and TLS CN. desk-claim resets all of that. Until it has run, do NOT leave

@@ -6,7 +6,7 @@
 #
 #   ./guest-setup.sh                          # base + shell, green prompt (VM convention)
 #   ./guest-setup.sh --colour cyan            # a container
-#   ./guest-setup.sh --label M.A.H.S.A.N-WDESK   # show a name instead of the hostname
+#   ./guest-setup.sh --label BUILD-BOX-01     # show a name instead of the hostname
 #   ./guest-setup.sh --docker                 # ...and Docker
 #   ./guest-setup.sh --docker --mise          # ...and the runtime manager
 #   ./guest-setup.sh --check                  # say what it would do, change nothing

@@ -1,108 +1,87 @@
 # fleetkit
 
-Set one Ubuntu machine up properly, then turn it into as many as you need.
+**Set up one Ubuntu machine properly. Then make as many copies as you need.**
 
-Small, idempotent bash scripts in two halves that are useful separately:
+Plain bash scripts. No framework, no config files, nothing to learn.
 
-- **[`ubuntu/`](#ubuntu--run-on-the-machine-itself-as-your-normal-user)** works on **any Ubuntu
-  box** — laptop, bare metal, VM, container, any hypervisor or none. One command gives you the
-  standard build: base packages, zsh + Starship with a prompt that tells you which machine you
-  are on, optional Docker and mise, and working remote desktop on Wayland.
-- **[`proxmox/`](#proxmox--run-on-the-proxmox-host-as-root)** is for turning one such machine
-  into many: image it, sysprep the copy into a template, clone it per person, and stamp each
-  clone with its own identity.
+## The problem
 
-If you only ever set up one machine, the first half is the whole point and you can ignore the
-second.
+Setting up a Linux desktop someone can actually use takes a day — most of it spent finding out
+that remote desktop no longer works the old way, and that the fix is three non-obvious steps.
 
-No framework, no agent, no state file — bash and the tools already on the box.
+Doing that for five colleagues takes five days.
 
-## Why this exists
+This makes it one day, then about ten minutes per person.
 
-Setting up an Ubuntu desktop for remote use takes a day, mostly spent discovering that xrdp no
-longer works on Wayland, that GNOME Remote Desktop needs credentials that are a real Unix
-account, and that its TLS certificate must be owned by the daemon or the service reports
-healthy while listening to nothing.
+## Start here
 
-Doing that per colleague takes a day each. This does it once.
-
-The [`docs/`](docs/) directory is half the value — every trap in there cost hours to find.
-
-## Quickstart
-
-**A fresh guest, one command, no credentials needed:**
+On a fresh Ubuntu machine — laptop, server, VM, anything:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mahsanamin/fleetkit/main/bootstrap.sh \
-  | bash -s -- --colour green --label MY-BOX --docker
+  | bash -s -- --docker
 ```
 
-**Or clone and run it:**
+One command, no login, no GitHub account. You get: sensible packages, zsh with a prompt that
+tells you which machine you're on, Docker, and remote desktop that works.
+
+Want to see what it would do first? Add `--check` and it changes nothing.
+
+## The two halves
+
+You can use either one on its own.
+
+| Folder | Use it to | Needs |
+|---|---|---|
+| **[`ubuntu/`](ubuntu/)** | Set up a machine | Any Ubuntu box. No hypervisor |
+| **[`proxmox/`](proxmox/)** | Turn that machine into many | A Proxmox host |
+
+If you only ever set up one machine, `ubuntu/` is the whole point. Ignore the rest.
+
+### Making copies (the `proxmox/` half)
 
 ```bash
-git clone https://github.com/mahsanamin/fleetkit.git
-cd fleetkit
-ubuntu/guest-setup.sh --colour green --docker
+# 1. image the machine that already works
+proxmox/desk-image.sh --vmid 150
+
+# 2. make a copy for someone
+proxmox/desk-instance.sh --person ali --vmid 201 --template 200 --start
 ```
 
-Every script takes `--check` or defaults to a dry run, and re-running is safe.
+Then inside the copy:
 
-## What's here
+```bash
+# 3. give it its own name, certificate and password
+sudo desk-claim ali
+```
 
-### `proxmox/` — run on the Proxmox host, as root
+That's a new machine for a new person. Everyone logs in as the same `ubuntu` account with their
+own password — the wall between people is the machine, not the username.
 
-| Script | Does |
+## The docs are half the value
+
+Every trap in here cost hours to find.
+
+| Read this | If |
 |---|---|
-| `desk-image.sh` | Clean `vzdump` of a VM, restarts it afterwards, tells you to get the dump off the box |
-| `desk-instance.sh` | Create a VM from a template (`--template`) or a dump (`--from-dump`). Refuses an occupied VMID |
-| `desk-shrink.sh` | Actually shrink a disk — filesystem, partition, LVM, config. Dry run by default |
-| `pve-halt.sh` | Stop every guest cleanly, then power off. Reports by default, `--halt` to act |
-
-### `ubuntu/` — run on the machine itself, as your normal user
-
-Nothing here knows or cares about Proxmox.
-
-| Script | Does |
-|---|---|
-| `guest-setup.sh` | The standard build: base packages, zsh + Starship, optional Docker and mise, keychain |
-| `desk-golden-prep.sh` | Turn a copy into a reusable template: shared account, delete the original, sysprep, credential sweep |
-| `desk-claim.sh` | Give a clone its own identity: hostname, certificate, machine-id, host keys, password. Also how you rename one later |
-| `desk-passwd.sh` | Change a password **and** the remote-desktop credentials together, so they cannot drift apart |
-| `desk-hint.sh` | Login hint pointing users at `desk-passwd`, quiet once they have used it |
-| `desk-passwd.desktop` | The same thing as an app-grid entry, for people who never open a terminal |
-
-### `docs/`
-
-| Doc | Read it if |
-|---|---|
-| [remote-desktop-on-wayland.md](docs/remote-desktop-on-wayland.md) | You are setting up RDP into GNOME. **Start here** — it will save you a day |
-| [golden-images.md](docs/golden-images.md) | You want one machine to become many, without shipping your credentials to all of them |
-| [shrinking-a-disk.md](docs/shrinking-a-disk.md) | You need a disk smaller, and would rather not destroy the partition table |
+| [remote-desktop-on-wayland.md](docs/remote-desktop-on-wayland.md) | You want RDP into a Linux desktop. **Start here — it saves a day** |
+| [golden-images.md](docs/golden-images.md) | You want one machine to become many, without copying your passwords into all of them |
+| [shrinking-a-disk.md](docs/shrinking-a-disk.md) | You need a disk smaller and would rather not destroy the partition table |
 | [conventions.md](docs/conventions.md) | You want to know why the defaults are what they are |
 | [gotchas.md](docs/gotchas.md) | Something small is behaving strangely |
 
-## Assumptions
+## Good to know
 
-- **Ubuntu 24.04 or 26.04** for `ubuntu/`. No hypervisor assumed — bare metal is fine
-- **Proxmox VE 8 or 9** for `proxmox/`, which is the only half that assumes anything
-- Where guests are VMs, they run `qemu-guest-agent` — several things simply do not work without it
-- Remote desktop means **GNOME Remote Desktop over RDP**, not xrdp or VNC
-- LVM-thin storage for the shrink script; it refuses layouts it does not recognise
+- **Nothing runs by accident.** Bare commands report what they'd do; changing things takes a flag.
+- **Safe to re-run.** Every script updates instead of duplicating.
+- **It refuses instead of guessing.** Wrong machine, occupied slot, unfamiliar disk layout — it
+  stops and tells you why.
 
-## Design rules
-
-- **Idempotent.** Re-running updates rather than duplicating, because you will run these again
-  after a pull.
-- **Verify, don't claim.** Scripts check the socket, re-parse the config they wrote, and print
-  what actually resolved rather than reporting success.
-- **Refuse rather than guess.** An occupied VMID, a running VM, a layout that isn't ext4, a
-  colour Starship doesn't know — stop and say why.
-- **The harmless thing is the default.** Bare invocation reports; acting takes a flag.
-- **Say what a step costs.** Where a command needs a reboot, a full logout, or takes the guest
-  down, it says so at the point you run it.
+Tested on Ubuntu 24.04 and 26.04, and Proxmox VE 8 and 9. Remote desktop means GNOME Remote
+Desktop over RDP — not xrdp, which no longer works on modern Ubuntu ([here's why](docs/remote-desktop-on-wayland.md)).
 
 ## Contributing
 
-Bug reports welcome, especially "this trap cost me hours" ones — those are what `docs/` is for.
+Bug reports welcome, especially "this cost me hours" ones. That's what `docs/` is for.
 
 MIT licensed.

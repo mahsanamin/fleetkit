@@ -1,0 +1,28 @@
+# This repo is bash and markdown. Anything else here is a local artefact.
+
+# macOS
+.DS_Store
+._*
+
+# editors
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# leftovers from editing in place (sed -i, patch, perl -pi)
+*.bak
+*.bak.*
+*.orig
+*.rej
+
+# local scratch — never commit a real dump, a key or a certificate
+*.log
+*.tmp
+/scratch/
+*.vma
+*.vma.zst
+*.pem
+*.key
+*.crt
