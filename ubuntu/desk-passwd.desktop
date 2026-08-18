@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Change My Password
+Comment=Changes your login AND remote-desktop password together
+Exec=desk-passwd
+Terminal=true
+Icon=dialog-password
+Categories=Settings;X-GNOME-Settings;
+Keywords=password;passwd;rdp;remote;desktop;login;
+
+# Install to /usr/share/applications/desk-passwd.desktop in the golden.
+#
+# This exists because a desktop user's instinct is Settings > Users, which changes only the
+# system password and leaves GNOME Remote Desktop holding the old one, breaking RDP. Giving
+# them an obvious "Change My Password" entry in the app grid is the only way to compete with
+# that button, since it cannot be removed.
