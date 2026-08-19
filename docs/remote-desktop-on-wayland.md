@@ -142,11 +142,25 @@ which is why the watchdog tries that first.
 
 ### Standing fix
 
-`ubuntu/desk-rdp-watchdog.sh` does the supervising the stack does not:
+`ubuntu/desk-rdp-watchdog.sh` does the supervising the stack does not.
+
+**Keep the repo on the machine, at `/opt/fleetkit`** — the same place `bootstrap.sh` puts it.
+Do not copy single scripts to `/tmp`: a throwaway has no provenance and no way to be updated,
+and you end up unable to answer "which version is this box running?".
 
 ```bash
-sudo ./desk-rdp-watchdog.sh --install    # probe every 2 min, heal when dead
+sudo git clone --depth 1 https://github.com/mahsanamin/fleetkit.git /opt/fleetkit
+sudo /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh --install    # probe every 2 min, heal when dead
 ```
+
+`--install` is idempotent, so updating later is a pull and a re-install:
+
+```bash
+sudo git -C /opt/fleetkit pull && sudo /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh --install
+```
+
+The repo is public, so neither command needs a credential. A machine that already ran
+`bootstrap.sh` has `/opt/fleetkit` and needs only the second line.
 
 It requires three consecutive failed probes, **never acts while a client is connected**, and
 has a cooldown so it cannot thrash. `desk-golden-prep.sh` installs it, so clones inherit it —
