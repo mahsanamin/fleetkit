@@ -24,7 +24,8 @@ ubuntu/     guest-setup.sh  desk-golden-prep.sh  desk-claim.sh
 proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
 docs/       remote-desktop-on-wayland.md  golden-images.md  shrinking-a-disk.md
             conventions.md  gotchas.md
-bootstrap.sh   one-command entry point: fetches this repo as a tarball, runs guest-setup.sh
+bootstrap.sh     one-command entry point: fetches this repo as a tarball, runs guest-setup.sh
+fleet-install.sh installs THIS REPO as system commands, on a guest or a hypervisor
 ```
 
 `bootstrap.sh` is fetched by `curl` on machines with **no credentials of any kind**. That is
@@ -40,6 +41,24 @@ It was split out of a private homelab repo. The test for anything new:
 
 Examples of what that rules out: `192.168.50.x`, `trans1T_lvm`, real colleague names, a fixed
 VMID as anything other than an illustration in a comment.
+
+## The repo IS the install
+
+`fleet-install.sh` puts the repo at **`/opt/fleetkit`** and links the commands to it:
+
+```
+/usr/local/bin/desk-claim -> /opt/fleetkit/ubuntu/desk-claim.sh
+```
+
+**Symlinks, never copies.** A pull then updates every command at once, and
+`readlink -f $(command -v desk-claim)` answers "which version is this machine running" — the
+question a scp'd copy can never answer. A broken symlink is loud; a stale copy is silent.
+
+So: **if you add a script people run as a command, add it to `fleet-install.sh`.** A script the
+README calls by bare name, with nothing installing it, is a promise the repo does not keep.
+
+`/opt` and not a home directory, because `desk-golden-prep` deletes the seed account *and its
+home* — a checkout inside it is destroyed and no clone inherits fleetkit.
 
 ## Rules for changing a script
 

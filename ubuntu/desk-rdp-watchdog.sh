@@ -55,7 +55,7 @@ GAP=20                   # seconds between probes
 COOLDOWN=600             # never act more than once per this many seconds
 STATE=/var/lib/desk-rdp-watchdog
 STAMP="$STATE/last-action"
-INSTALL_PATH=/usr/local/sbin/desk-rdp-watchdog
+INSTALL_PATH=/usr/local/bin/desk-rdp-watchdog   # same dir fleet-install.sh uses
 TAG=desk-rdp-watchdog
 
 log()  { logger -t "$TAG" -- "$*" 2>/dev/null || true; echo "[$TAG] $*"; }
@@ -178,7 +178,19 @@ do_install() {
   systemctl list-unit-files gnome-remote-desktop.service >/dev/null 2>&1 \
     || die "gnome-remote-desktop is not installed — nothing to watch"
 
-  install -m 755 "$0" "$INSTALL_PATH"
+  # Prefer a SYMLINK into the checkout, so `git pull` updates this command like every other
+  # fleetkit command and `readlink -f` says which version is running. Fall back to a copy only
+  # when the source is somewhere disposable, and say so — a stale copy is silent, and that is
+  # the whole failure mode this script exists to end.
+  local src; src="$(readlink -f "$0")"
+  case "$src" in
+    /tmp/*|/var/tmp/*|/dev/fd/*)
+      install -m 755 "$src" "$INSTALL_PATH"
+      echo "   WARNING: installed a COPY from $src — it cannot be updated by a pull."
+      echo "            Keep the repo somewhere persistent (see fleet-install.sh) and re-run."
+      ;;
+    *) ln -sfn "$src" "$INSTALL_PATH" ;;
+  esac
   mkdir -p "$STATE"
 
   cat > /etc/systemd/system/desk-rdp-watchdog.service <<EOF
@@ -210,7 +222,11 @@ EOF
 
   # Verify, don't claim.
   echo
-  echo "installed as $INSTALL_PATH, timer enabled"
+  if [ -L "$INSTALL_PATH" ]; then
+    echo "installed as $INSTALL_PATH -> $(readlink "$INSTALL_PATH"), timer enabled"
+  else
+    echo "installed as $INSTALL_PATH (copy), timer enabled"
+  fi
   local out
   if out=$(probe 2>&1); then echo "   probe now: $out"
   else echo "   probe now: $out  (the timer will attempt a heal within ~2 min)"; fi
@@ -224,8 +240,9 @@ EOF
 do_uninstall() {
   systemctl disable --now desk-rdp-watchdog.timer 2>/dev/null || true
   rm -f /etc/systemd/system/desk-rdp-watchdog.service \
-        /etc/systemd/system/desk-rdp-watchdog.timer \
-        "$INSTALL_PATH"
+        /etc/systemd/system/desk-rdp-watchdog.timer
+  # Only remove the command if it is ours — never follow the symlink into the repo.
+  if [ -L "$INSTALL_PATH" ] || [ -f "$INSTALL_PATH" ]; then rm -f "$INSTALL_PATH"; fi
   systemctl daemon-reload
   echo "uninstalled (state kept in $STATE)"
 }

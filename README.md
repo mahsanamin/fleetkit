@@ -27,6 +27,32 @@ tells you which machine you're on, Docker, and remote desktop that works.
 
 Want to see what it would do first? Add `--check` and it changes nothing.
 
+## Get the commands
+
+`bootstrap.sh` sets a machine up. To also get fleetkit's commands (`desk-claim`, `desk-passwd`,
+`desk-rdp-watchdog`, and on a Proxmox host `desk-image` and friends) installed properly:
+
+```bash
+sudo /opt/fleetkit/fleet-install.sh --check     # what it would do, changes nothing
+sudo /opt/fleetkit/fleet-install.sh --apply
+```
+
+It clones the repo to `/opt/fleetkit` if it isn't there, links the commands to it, and installs
+the RDP watchdog's timer where there's a remote desktop to watch. On a Proxmox host it also
+installs the `proxmox/` commands — detected by whether `qm` exists, not configured.
+
+Because the commands are **symlinks into the repo**, updating everything is one pull:
+
+```bash
+sudo fleet-install --update
+```
+
+And you can always tell what a machine is running:
+
+```bash
+readlink -f $(command -v desk-claim)
+```
+
 ## The two halves
 
 You can use either one on its own.

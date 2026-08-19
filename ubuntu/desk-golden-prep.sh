@@ -291,33 +291,40 @@ grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1 \
 unset PW PW2
 systemctl restart gnome-remote-desktop.service || true
 
-step "RDP watchdog"
-# GRD strands itself when the GDM greeter dies: the unit still reports active (running), the
-# journal stays empty, and every connection is reset. Nothing in that chain supervises
-# anything else, so this is baked in here rather than left to be installed per machine —
-# a template is a snapshot, so anything not present now is absent from every clone.
-# See docs/remote-desktop-on-wayland.md.
-WD=""
-for cand in "$(dirname "$0")/desk-rdp-watchdog.sh" /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh /tmp/desk-rdp-watchdog.sh; do
-  [ -f "$cand" ] && { WD="$cand"; break; }
+step "fleetkit commands"
+# Install the repo and ALL its commands, not just one script, so a clone arrives with
+# desk-claim, desk-passwd and the RDP watchdog already present and traceable to a version.
+# This is baked in here because a template is a SNAPSHOT: whatever is missing now is missing
+# from every clone, and nobody re-runs a setup step on a machine they were handed.
+#
+# It must come before anything that installs a single command by hand, or a copy would
+# overwrite the symlink fleet-install just made and start drifting again.
+FI=""
+for cand in "$(dirname "$0")/../fleet-install.sh" /opt/fleetkit/fleet-install.sh /tmp/fleet-install.sh; do
+  [ -f "$cand" ] && { FI="$cand"; break; }
 done
-if [ -n "$WD" ]; then
-  # Loud but not fatal: a watchdog that fails to install must not abort a golden build that
-  # is otherwise finished. The warning is what matters, because a missing watchdog is silent.
-  if bash "$WD" --install 2>&1 | sed 's/^/   /'; then :; else
-    echo "   WARNING: watchdog install FAILED — run 'sudo desk-rdp-watchdog --install' by hand"
+if [ -n "$FI" ]; then
+  # Loud but not fatal: this must not abort a golden build that is otherwise finished.
+  if bash "$FI" --apply 2>&1 | sed 's/^/   /'; then :; else
+    echo "   WARNING: fleet-install FAILED — run 'sudo fleet-install --apply' in the clone"
   fi
 else
-  echo "   desk-rdp-watchdog.sh not found — copy it over, then: sudo desk-rdp-watchdog --install"
-  echo "   WITHOUT it, a dead greeter strands RDP silently until a human notices."
-fi
-
-step "desk-claim"
-if [ -f /tmp/desk-claim.sh ]; then
-  install -m 755 /tmp/desk-claim.sh /usr/local/bin/desk-claim
-  echo "   installed to /usr/local/bin/desk-claim"
-else
-  echo "   /tmp/desk-claim.sh not found — copy it over before templating"
+  echo "   fleet-install.sh not found — falling back to single-script installs"
+  echo "   WARNING: those are COPIES, so they cannot be updated by a pull. Prefer:"
+  echo "            sudo git clone --depth 1 https://github.com/mahsanamin/fleetkit.git /opt/fleetkit"
+  echo "            sudo /opt/fleetkit/fleet-install.sh --apply"
+  if [ -f /tmp/desk-claim.sh ]; then
+    install -m 755 /tmp/desk-claim.sh /usr/local/bin/desk-claim
+    echo "   installed a copy at /usr/local/bin/desk-claim"
+  else
+    echo "   /tmp/desk-claim.sh not found either — the clone will have no desk-claim"
+  fi
+  if [ -f /tmp/desk-rdp-watchdog.sh ]; then
+    bash /tmp/desk-rdp-watchdog.sh --install 2>&1 | sed 's/^/   /' || \
+      echo "   WARNING: watchdog install failed"
+  else
+    echo "   WITHOUT the watchdog, a dead greeter strands RDP silently until a human notices."
+  fi
 fi
 
 cat <<NEXT

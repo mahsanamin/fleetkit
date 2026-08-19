@@ -150,13 +150,20 @@ and you end up unable to answer "which version is this box running?".
 
 ```bash
 sudo git clone --depth 1 https://github.com/mahsanamin/fleetkit.git /opt/fleetkit
+sudo /opt/fleetkit/fleet-install.sh --apply    # links the commands, installs this timer
+```
+
+`fleet-install.sh` is the one-step path: it installs every fleetkit command and sets up this
+watchdog's timer. To set up only the watchdog:
+
+```bash
 sudo /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh --install    # probe every 2 min, heal when dead
 ```
 
 `--install` is idempotent, so updating later is a pull and a re-install:
 
 ```bash
-sudo git -C /opt/fleetkit pull && sudo /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh --install
+sudo fleet-install --update
 ```
 
 The repo is public, so neither command needs a credential. A machine that already ran
