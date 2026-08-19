@@ -291,6 +291,27 @@ grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1 \
 unset PW PW2
 systemctl restart gnome-remote-desktop.service || true
 
+step "RDP watchdog"
+# GRD strands itself when the GDM greeter dies: the unit still reports active (running), the
+# journal stays empty, and every connection is reset. Nothing in that chain supervises
+# anything else, so this is baked in here rather than left to be installed per machine —
+# a template is a snapshot, so anything not present now is absent from every clone.
+# See docs/remote-desktop-on-wayland.md.
+WD=""
+for cand in "$(dirname "$0")/desk-rdp-watchdog.sh" /opt/fleetkit/ubuntu/desk-rdp-watchdog.sh /tmp/desk-rdp-watchdog.sh; do
+  [ -f "$cand" ] && { WD="$cand"; break; }
+done
+if [ -n "$WD" ]; then
+  # Loud but not fatal: a watchdog that fails to install must not abort a golden build that
+  # is otherwise finished. The warning is what matters, because a missing watchdog is silent.
+  if bash "$WD" --install 2>&1 | sed 's/^/   /'; then :; else
+    echo "   WARNING: watchdog install FAILED — run 'sudo desk-rdp-watchdog --install' by hand"
+  fi
+else
+  echo "   desk-rdp-watchdog.sh not found — copy it over, then: sudo desk-rdp-watchdog --install"
+  echo "   WITHOUT it, a dead greeter strands RDP silently until a human notices."
+fi
+
 step "desk-claim"
 if [ -f /tmp/desk-claim.sh ]; then
   install -m 755 /tmp/desk-claim.sh /usr/local/bin/desk-claim

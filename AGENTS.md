@@ -20,6 +20,7 @@ someone else will use this repo.
 ```
 ubuntu/     guest-setup.sh  desk-golden-prep.sh  desk-claim.sh
             desk-passwd.sh  desk-hint.sh  desk-passwd.desktop
+            desk-rdp-watchdog.sh
 proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
 docs/       remote-desktop-on-wayland.md  golden-images.md  shrinking-a-disk.md
             conventions.md  gotchas.md

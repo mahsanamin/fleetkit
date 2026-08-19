@@ -66,6 +66,108 @@ password with `passwd` alone and GRD keeps the old one — remote login stops be
 create a session. `ubuntu/desk-passwd.sh` exists to change both together, and
 `Settings → Users → Password` is the button that will do this to you.
 
+## RDP dies silently and never comes back — install the watchdog
+
+Different fault from the credentials one above, **same "stuck at connecting" symptom**, so it
+is easy to misdiagnose as a repeat. Tell them apart by where it fails:
+
+| | Bad credentials | Greeter died |
+|---|---|---|
+| Log signature | `Sending server redirection`, then routing-token errors | **nothing at all** |
+| `journalctl --user -u gnome-remote-desktop` | empty | empty |
+| Fails at | after the handshake, creating the session | the **first RDP packet** |
+| A raw RDP probe gets | a negotiation reply | **TCP reset** |
+
+### How to tell in one step
+
+Send a real RDP `X.224 Connection Request` and see whether you get a negotiation reply. A
+healthy server answers; a stranded one resets the connection:
+
+```bash
+sudo desk-rdp-watchdog --check      # "RDP is answering on :3389 — OK NEG_RSP"
+```
+
+Run it against a machine you know is working too. Comparing a broken box to a good one is
+worth more than an evening of reasoning about either.
+
+### Why it happens
+
+Remote Login is a three-process chain with **no supervisor**:
+
+```
+system daemon (owns :3389)  --D-Bus-->  GDM greeter session
+                                          `--starts--> gnome-remote-desktop-handover.service
+                                        a logged-in session's --handover daemon
+```
+
+Nothing watches anything else. When the greeter's `gnome-shell` dies — or a session is
+orphaned by an unclean disconnect — the system daemon keeps a stale reference and never
+recovers. It accepts your TCP connection, has nowhere to hand it, and closes it with your
+bytes unread, which on the wire is a reset. A real occurrence, from the journal:
+
+```
+18:45:03  [RDP] Network or intentional disconnect, stopping session
+18:45:05  GDM launches a fresh remote-login greeter, starts the handover service
+18:45:38  gdm3: Gdm: Child process -NNNNN was already dead.      <- never respawned
+19:06+    Could not find routing token on remote_clients list
+later     Failed to peek routing token: Cancelled   (every 5s, the client retrying)
+```
+
+### The two properties that make this expensive
+
+- **systemd cannot see it.** The unit stays `active (running)` the whole time. Nothing
+  crashed, so nothing is restarted and no unit is in a failed state.
+- **The failure path logs nothing.** Measured: three RDP probes, zero journal lines. Both
+  `systemctl status` and `journalctl` look clean while RDP is 100% dead.
+
+> Neither `systemctl status` nor an empty journal is evidence that RDP works. Only a real RDP
+> handshake is.
+
+### Fixing it by hand, and the order that matters
+
+```bash
+sudo loginctl terminate-session <id>     # optional: drop an orphaned session
+sudo systemctl daemon-reload
+sudo systemctl restart gdm               # only if the greeter is dead too
+sleep 15                                 # let the new greeter register with GDM
+sudo systemctl restart gnome-remote-desktop     # MUST come after gdm is up
+```
+
+**Restarting `gdm` alone does not fix it.** The stale system daemon stays paired with the
+greeter that was just replaced. Confirmed on a real failure by checking `MainPID`: gdm had
+restarted minutes ago while the GRD daemon was still the process from the previous boot,
+holding `:3389`. Conversely, if the greeter is healthy and only the daemon is stale,
+restarting `gnome-remote-desktop` on its own is enough — and it does not end live sessions,
+which is why the watchdog tries that first.
+
+### Standing fix
+
+`ubuntu/desk-rdp-watchdog.sh` does the supervising the stack does not:
+
+```bash
+sudo ./desk-rdp-watchdog.sh --install    # probe every 2 min, heal when dead
+```
+
+It requires three consecutive failed probes, **never acts while a client is connected**, and
+has a cooldown so it cannot thrash. `desk-golden-prep.sh` installs it, so clones inherit it —
+a template is a snapshot, so a watchdog added later is absent from every existing clone.
+
+Prove it heals rather than trusting it:
+
+```bash
+sudo systemctl stop gnome-remote-desktop && journalctl -t desk-rdp-watchdog -f
+```
+
+### Still open: why the greeter's shell dies
+
+A `gnome-shell --mode=gdm` **SEGV** (`code=dumped, status=11/SEGV`) was caught during one
+repair, but `systemd-coredump` was not installed so the core could not be read. Install it
+ahead of time or this stays a symptom-level fix:
+
+```bash
+sudo apt install systemd-coredump    # then: coredumpctl list
+```
+
 ## The TLS certificate must be owned by the daemon
 
 The service reports `active (running)` while **nothing listens on 3389**, and the log says the
