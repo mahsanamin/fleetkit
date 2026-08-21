@@ -96,8 +96,12 @@ show_state() {
   fi
   [ -d /var/log/journal ] && note "persistent journal                  yes" \
                           || note "persistent journal                  NO — logs die with the boot"
-  local iv; iv="$(systemctl cat sysstat-collect.timer 2>/dev/null | grep -m1 OnCalendar || echo '   (not found)')"
-  note "sysstat interval                   ${iv#*=}"
+  # Ask systemd for the EFFECTIVE schedule. Reading `systemctl cat` picks the vendor unit's
+  # line and ignores the drop-in, which reports the old interval after this script changed it.
+  local iv
+  iv="$(systemctl show sysstat-collect.timer -p TimersCalendar --value 2>/dev/null \
+        | sed -n 's/.*OnCalendar=\([^;]*\);.*/\1/p' | head -1)"
+  note "sysstat interval                   ${iv:-not installed}"
 }
 
 # ---------------------------------------------------------------- apply
