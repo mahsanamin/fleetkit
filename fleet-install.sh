@@ -48,6 +48,7 @@ desk-claim:ubuntu/desk-claim.sh
 desk-passwd:ubuntu/desk-passwd.sh
 desk-golden-prep:ubuntu/desk-golden-prep.sh
 desk-rdp-watchdog:ubuntu/desk-rdp-watchdog.sh
+desk-crash-trap:ubuntu/desk-crash-trap.sh
 guest-setup:ubuntu/guest-setup.sh
 fleet-install:fleet-install.sh
 "

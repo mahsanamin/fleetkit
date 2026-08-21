@@ -20,9 +20,10 @@ someone else will use this repo.
 ```
 ubuntu/     guest-setup.sh  desk-golden-prep.sh  desk-claim.sh
             desk-passwd.sh  desk-hint.sh  desk-passwd.desktop
-            desk-rdp-watchdog.sh
+            desk-rdp-watchdog.sh  desk-crash-trap.sh
 proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
-docs/       remote-desktop-on-wayland.md  golden-images.md  shrinking-a-disk.md
+docs/       remote-desktop-on-wayland.md  diagnosing-a-frozen-guest.md
+            golden-images.md  shrinking-a-disk.md
             conventions.md  gotchas.md
 bootstrap.sh     one-command entry point: fetches this repo as a tarball, runs guest-setup.sh
 fleet-install.sh installs THIS REPO as system commands, on a guest or a hypervisor
