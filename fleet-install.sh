@@ -111,6 +111,16 @@ ensure_repo() {
     fi
   fi
 
+  # $REPO is root-owned, so git refuses to run there as a normal user ("dubious ownership").
+  # Register it system-wide so anyone can INSPECT it - git log, git status, git diff - to answer
+  # "which version is this machine running". Writing still needs root, because the files are
+  # still root-owned; this only stops git from refusing to look.
+  if acting && [ -d "$REPO/.git" ]; then
+    if ! git config --system --get-all safe.directory 2>/dev/null | grep -qx "$REPO"; then
+      git config --system --add safe.directory "$REPO" && note "registered $REPO as a safe.directory (read access for all users)"
+    fi
+  fi
+
   [ -d "$REPO" ] || return 0
   local head
   head="$(git -C "$REPO" log -1 --format='%h %s' 2>/dev/null || echo 'not a checkout')"
