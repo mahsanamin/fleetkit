@@ -49,6 +49,7 @@ desk-passwd:ubuntu/desk-passwd.sh
 desk-golden-prep:ubuntu/desk-golden-prep.sh
 desk-rdp-watchdog:ubuntu/desk-rdp-watchdog.sh
 desk-crash-trap:ubuntu/desk-crash-trap.sh
+fleet-update:fleet-install.sh
 guest-setup:ubuntu/guest-setup.sh
 fleet-install:fleet-install.sh
 "
@@ -64,9 +65,17 @@ desk-hint.sh:ubuntu/desk-hint.sh:/etc/profile.d/desk-hint.sh
 desk-passwd.desktop:ubuntu/desk-passwd.desktop:/usr/share/applications/desk-passwd.desktop
 "
 
-MODE=check
+# Invoked as `fleet-update`, act like --update. One script, two names, so the thing you run
+# weekly is one word you can remember rather than a flag you have to look up.
+case "$(basename "$0")" in
+  fleet-update) MODE=update ;;
+  *)            MODE=check ;;
+esac
+[ $# -eq 0 ] && [ "$MODE" = update ] && set -- --update
+
 case "${1:-}" in
-  ""|--check)  MODE=check ;;
+  "")          : ;;
+  --check)     MODE=check ;;
   --apply)     MODE=apply ;;
   --update)    MODE=update ;;
   --uninstall) MODE=uninstall ;;
@@ -183,6 +192,70 @@ install_cmds() {
   done
 }
 
+# --- 2b. "there is an update" notifier -------------------------------------------------
+# Deliberately does NOT auto-update. The commands are symlinks into the repo, so a pull is an
+# immediate deploy to every command at once; doing that unattended would push a bad commit
+# onto every machine without anyone watching. This only FETCHES (read only) and leaves a
+# stamp, then a login hint tells you. Taking the update stays a deliberate `sudo fleet-update`.
+install_notifier() {
+  step "update notifier"
+  if ! acting; then note "would install a daily fetch + login hint"; return 0; fi
+
+  # Expand REPO deliberately on one line, keep the rest single-quoted. Escaping $ through two
+  # shells is how scripts that write scripts get corrupted - see AGENTS.md.
+  {
+    echo '#!/usr/bin/env bash'
+    echo '# Written by fleet-install.sh. Fetches only; never changes what is installed.'
+    echo 'set -euo pipefail'
+    echo "REPO=\"$REPO\""
+    cat <<'INNER'
+STAMP=/var/lib/fleetkit/behind
+mkdir -p /var/lib/fleetkit
+git -C "$REPO" fetch -q origin 2>/dev/null || exit 0
+n=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+if [ "$n" -gt 0 ]; then echo "$n" > "$STAMP"; else rm -f "$STAMP"; fi
+INNER
+  } > /usr/local/sbin/fleetkit-check-updates
+  chmod 755 /usr/local/sbin/fleetkit-check-updates
+
+  cat > /etc/systemd/system/fleetkit-check-updates.service <<'EOF'
+[Unit]
+Description=Check whether fleetkit has updates (fetch only, never applies)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fleetkit-check-updates
+EOF
+  cat > /etc/systemd/system/fleetkit-check-updates.timer <<'EOF'
+[Unit]
+Description=Daily fleetkit update check
+[Timer]
+OnBootSec=10min
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+[Install]
+WantedBy=timers.target
+EOF
+
+  cat > /etc/profile.d/fleet-update-hint.sh <<'EOF'
+# Written by fleet-install.sh. Reads a stamp file only - no network, no git, no delay.
+if [ -s /var/lib/fleetkit/behind ]; then
+  printf '\n  fleetkit is %s commit(s) behind. Take it with:  sudo fleet-update\n\n' \
+    "$(cat /var/lib/fleetkit/behind 2>/dev/null)"
+fi
+EOF
+  chmod 644 /etc/profile.d/fleet-update-hint.sh
+
+  systemctl daemon-reload
+  systemctl enable --now fleetkit-check-updates.timer >/dev/null 2>&1 || true
+  /usr/local/sbin/fleetkit-check-updates 2>/dev/null || true
+  if [ -s /var/lib/fleetkit/behind ]; then
+    note "installed. This machine is $(cat /var/lib/fleetkit/behind) commit(s) behind right now."
+  else
+    note "installed. Up to date; the hint stays quiet until there is something to take."
+  fi
+}
+
 # --- 3. the watchdog's timer ------------------------------------------------------------
 # Only the systemd units, and only where there is remote desktop to watch. The command itself
 # is already symlinked above.
@@ -230,6 +303,11 @@ do_uninstall() {
     local dest; dest="$(echo "$e" | cut -d: -f3)"
     [ -L "$dest" ] && { rm -f "$dest"; note "removed $dest"; }
   done
+  systemctl disable --now fleetkit-check-updates.timer 2>/dev/null || true
+  rm -f /etc/systemd/system/fleetkit-check-updates.{service,timer} \
+        /usr/local/sbin/fleetkit-check-updates /etc/profile.d/fleet-update-hint.sh
+  systemctl daemon-reload 2>/dev/null || true
+  note "removed the update notifier"
   note "the watchdog timer is separate: sudo desk-rdp-watchdog --uninstall"
 }
 
@@ -248,6 +326,7 @@ case "$MODE" in
       fi
     fi
     install_cmds
+    install_notifier
     install_watchdog
     if acting; then verify; echo; echo "Done. Update later with: sudo fleet-install --update"
     else echo; echo "DRY RUN — nothing changed. Re-run with --apply."; fi ;;
