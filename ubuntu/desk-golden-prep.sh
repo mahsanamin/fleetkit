@@ -139,6 +139,28 @@ purge_previous_owner() {
   journalctl --vacuum-time=1s >/dev/null 2>&1 || true
 
   rm -rf /var/lib/cloud/instances /var/lib/cloud/instance /var/lib/cloud/data 2>/dev/null || true
+
+  # The Ubuntu installer leaves its own cloud-config behind, naming the first user it made.
+  # Inert (cloud-init disables itself after first boot) but it still says whose machine this was.
+  if [ -n "${1:-}" ] && [ -f /etc/cloud/cloud.cfg.d/99-installer.cfg ]; then
+    if grep -q "$1" /etc/cloud/cloud.cfg.d/99-installer.cfg 2>/dev/null; then
+      sed -i "s/\b$1\b/$STD_USER/g" /etc/cloud/cloud.cfg.d/99-installer.cfg
+      echo "   rewrote /etc/cloud/cloud.cfg.d/99-installer.cfg (it named the first user)"
+    fi
+  fi
+
+  # An EMPTY authorized_keys is useless; a populated one on a template is a standing login for
+  # whoever's key it is, on every machine ever cloned from it. Remove the empty case, and shout
+  # about the other rather than deciding for the operator.
+  if [ -f /root/.ssh/authorized_keys ]; then
+    if [ -s /root/.ssh/authorized_keys ]; then
+      echo "   WARNING: /root/.ssh/authorized_keys has content — a login on EVERY clone:"
+      ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null | sed 's/^/      /'
+    else
+      rm -f /root/.ssh/authorized_keys
+      echo "   removed an empty /root/.ssh/authorized_keys"
+    fi
+  fi
   rm -f /var/log/sysstat/sa* /var/log/sysstat/sar* 2>/dev/null || true
   find /var/log -type f -name '*.gz' -delete 2>/dev/null || true
   find /var/log -type f -regex '.*\.[0-9]+$' -delete 2>/dev/null || true
@@ -210,7 +232,7 @@ if [ "$MODE" = reseal ]; then
   fi
 
   purge_tailscale_identity
-  purge_previous_owner
+  purge_previous_owner "$SEED"
 
   step "sysprep"
   : > /etc/machine-id
@@ -281,7 +303,7 @@ if [ "$MODE" = finish ]; then
   fi
 
   purge_tailscale_identity
-  purge_previous_owner
+  purge_previous_owner "$SEED"
 
   step "sysprep"
   : > /etc/machine-id                       # EMPTY, so each clone derives its own from SMBIOS
