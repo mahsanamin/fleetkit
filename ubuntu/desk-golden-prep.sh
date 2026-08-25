@@ -123,12 +123,16 @@ purge_previous_owner() {
   fi
 
   # Journals are keyed by machine-id, so a sysprepped clone keeps the OLD directories forever.
-  if [ -d /var/log/journal ] && [ -s /etc/machine-id ]; then
-    local cur; cur="$(cat /etc/machine-id)"
+  # An EMPTY machine-id means this image has already been sysprepped, and then NONE of these
+  # directories belong to it — so all of them go. Guarding on `-s /etc/machine-id` looked
+  # equivalent and silently skipped the whole loop in exactly that case, leaving the previous
+  # owner's user journal on a template. Caught on a real golden build, 2026-08-25.
+  if [ -d /var/log/journal ]; then
+    local cur; cur="$(cat /etc/machine-id 2>/dev/null || true)"
     for d in /var/log/journal/*/; do
       [ -d "$d" ] || continue
-      [ "$(basename "$d")" = "$cur" ] && continue
-      rm -rf "$d"; echo "   removed $(basename "$d") journal (a previous machine identity)"
+      [ -n "$cur" ] && [ "$(basename "$d")" = "$cur" ] && continue
+      rm -rf "$d"; echo "   removed $(basename "$d") journal (not this machine's identity)"
     done
   fi
   journalctl --rotate >/dev/null 2>&1 || true
