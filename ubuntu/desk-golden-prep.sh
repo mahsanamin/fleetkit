@@ -80,6 +80,22 @@ purge_keyrings() {
   return 0
 }
 
+# Tailscale keeps this machine's node identity in a state file. A clone that boots with a
+# copy of it registers as the SAME node, and the two then fight over the name — which can take
+# the ORIGINAL machine off the tailnet while you are using it to reach the clone. Each machine
+# has to join as itself, so the identity is removed here rather than remembered later.
+purge_tailscale_identity() {
+  step "tailscale identity"
+  if [ ! -e /var/lib/tailscale/tailscaled.state ]; then
+    echo "   no tailscale state here"
+    return 0
+  fi
+  systemctl stop tailscaled 2>/dev/null || true
+  rm -f /var/lib/tailscale/tailscaled.state
+  echo "   removed — every clone must run 'sudo tailscale up' to join as itself"
+  return 0
+}
+
 # A sysprepped template has no SSH host keys, and nothing on a non-cloud-init image
 # regenerates them, so sshd refuses to start on a fresh clone and it can only be reached
 # through the console. This unit fixes that for every clone.
@@ -137,6 +153,8 @@ if [ "$MODE" = reseal ]; then
     grdctl --system rdp clear-credentials 2>/dev/null || true
     grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
   fi
+
+  purge_tailscale_identity
 
   step "sysprep"
   : > /etc/machine-id
@@ -204,6 +222,8 @@ if [ "$MODE" = finish ]; then
     grdctl --system rdp clear-credentials 2>/dev/null || true
     grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
   fi
+
+  purge_tailscale_identity
 
   step "sysprep"
   : > /etc/machine-id                       # EMPTY, so each clone derives its own from SMBIOS

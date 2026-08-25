@@ -65,6 +65,20 @@ because "I'll remember to check" does not survive a 1am build.
 
 The cheapest moment to take an image is **before** you sign into anything on the source.
 
+## An identity is more than the hostname
+
+Anything that registered this machine with something else travels in the copy and has to be
+removed before the clone meets the network:
+
+| What | What the clone does with it |
+|---|---|
+| `/etc/machine-id` | Shared identity; DHCP clients then fight over one lease |
+| `/etc/ssh/ssh_host_*` | Two machines answering as the same host — and every client warns |
+| `/var/lib/tailscale/tailscaled.state` | The clone registers as the SAME tailnet node, and can take the **original** off the tailnet while you are using it to reach the clone |
+
+`--finish` and `--reseal` remove all three. A mesh VPN is the one that surprises people,
+because it is the only one that breaks the machine you are still working on.
+
 ## Sysprep: leave machine-id EMPTY, not regenerated
 
 `/etc/machine-id` is derived from the VM's SMBIOS UUID, which the hypervisor makes unique per
