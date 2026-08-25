@@ -60,6 +60,27 @@ The lesson that matters most here. A cloned home directory carries:
 `--finish` purges and then **sweeps** for these, printing anything it finds. The sweep exists
 because "I'll remember to check" does not survive a 1am build.
 
+### Deleting the account is not the same as removing the person
+
+Found on a real handover, 2026-08-25, *after* a `deluser --remove-home` that looked clean. The
+original owner's SHA-512 password hash was still on the disk in **two** places, and their shell
+history in a third:
+
+| Left behind | Why it survives |
+|---|---|
+| `/etc/shadow-`, `passwd-`, `group-`, `gshadow-`, `subuid-`, `subgid-` | `useradd`/`deluser` keep a backup copy of every file they edit. `shadow-` holds the hash |
+| `/var/log/installer/autoinstall-user-data` | The Ubuntu installer records the first user **and their hash**, and nothing ever cleans it |
+| `/var/log/journal/<old-machine-id>/user-1000.journal` | Journals are keyed by machine-id. `journalctl --vacuum` only touches the **current** one, so a sysprepped clone keeps every previous identity's journal in full |
+| `/var/lib/cloud/instances/*` | cloud-init stores the user-data that created the first account |
+| `/var/log/sysstat/sa*` | System accounting from the source machine |
+
+Every user of a cloned machine has root on it, so all of this is readable by them.
+`purge_previous_owner()` removes it and the sweep now looks for it.
+
+**Grep for the account name before you hand a machine over**, and read the hits rather than
+trusting a count — an account called `ahsan` matches inside a hostname like `wsrv-mahsan`, which
+is noise, while `/etc/shadow-` is not.
+
 > Found the hard way: Chrome on a colleague's clone asked for a keyring password, and the
 > **original owner's** old password was the one that opened it.
 

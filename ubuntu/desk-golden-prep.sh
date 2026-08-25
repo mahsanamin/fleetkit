@@ -96,6 +96,57 @@ purge_tailscale_identity() {
   return 0
 }
 
+# Deleting the account is not the same as removing the person. Found on a colleague's server,
+# 2026-08-25, AFTER a clean-looking deluser: the seed's SHA-512 password hash was still sitting
+# in TWO places, and their whole shell history in a third.
+#
+#   /etc/shadow- (and passwd-/group-/gshadow-/subuid-/subgid-)  useradd's backup copies
+#   /var/log/installer/autoinstall-user-data                     the installer keeps the hash
+#   /var/log/journal/<OLD machine-id>/user-1000.journal          survives `journalctl --vacuum`,
+#                                                                which only touches the CURRENT id
+#   /var/lib/cloud/instances/*                                   cloud-init's saved user-data
+#   /var/log/sysstat/sa*                                         accounting from the source host
+#
+# Anyone with root on their own machine can read all of it, and every clone user has root.
+purge_previous_owner() {
+  step "traces of the previous owner"
+
+  for f in /etc/passwd- /etc/shadow- /etc/group- /etc/gshadow- /etc/subuid- /etc/subgid-; do
+    [ -e "$f" ] || continue
+    shred -u "$f" 2>/dev/null || rm -f "$f"
+    echo "   removed $f (held a password hash)"
+  done
+
+  if [ -d /var/log/installer ]; then
+    rm -rf /var/log/installer
+    echo "   removed /var/log/installer (autoinstall-user-data carries the hash)"
+  fi
+
+  # Journals are keyed by machine-id, so a sysprepped clone keeps the OLD directories forever.
+  if [ -d /var/log/journal ] && [ -s /etc/machine-id ]; then
+    local cur; cur="$(cat /etc/machine-id)"
+    for d in /var/log/journal/*/; do
+      [ -d "$d" ] || continue
+      [ "$(basename "$d")" = "$cur" ] && continue
+      rm -rf "$d"; echo "   removed $(basename "$d") journal (a previous machine identity)"
+    done
+  fi
+  journalctl --rotate >/dev/null 2>&1 || true
+  journalctl --vacuum-time=1s >/dev/null 2>&1 || true
+
+  rm -rf /var/lib/cloud/instances /var/lib/cloud/instance /var/lib/cloud/data 2>/dev/null || true
+  rm -f /var/log/sysstat/sa* /var/log/sysstat/sar* 2>/dev/null || true
+  find /var/log -type f -name '*.gz' -delete 2>/dev/null || true
+  find /var/log -type f -regex '.*\.[0-9]+$' -delete 2>/dev/null || true
+  for f in /var/log/auth.log /var/log/syslog /var/log/dpkg.log /var/log/dmesg /var/log/kern.log \
+           /var/log/apt/history.log /var/log/apt/term.log /var/log/cloud-init.log \
+           /var/log/cloud-init-output.log; do
+    [ -e "$f" ] && : > "$f"
+  done
+  echo "   journal vacuumed, cloud-init instance data and rotated logs cleared"
+  return 0
+}
+
 # A sysprepped template has no SSH host keys, and nothing on a non-cloud-init image
 # regenerates them, so sshd refuses to start on a fresh clone and it can only be reached
 # through the console. This unit fixes that for every clone.
@@ -155,6 +206,7 @@ if [ "$MODE" = reseal ]; then
   fi
 
   purge_tailscale_identity
+  purge_previous_owner
 
   step "sysprep"
   : > /etc/machine-id
@@ -169,7 +221,8 @@ if [ "$MODE" = reseal ]; then
   step "credential sweep"
   found=0
   for p in /home/*/.config/gh /home/*/.ssh /home/*/.aws /home/*/.git-credentials \
-           /home/*/.docker/config.json /home/*/.local/share/keyrings /home/*/.a_secs; do
+           /home/*/.docker/config.json /home/*/.local/share/keyrings /home/*/.a_secs \
+           /etc/shadow- /etc/passwd- /var/log/installer /var/lib/cloud/instances; do
     [ -e "$p" ] || continue
     # An EMPTY .ssh is created by useradd and carries nothing. Only report paths with
     # something in them, or the sweep cries wolf on every reseal and gets ignored.
@@ -224,6 +277,7 @@ if [ "$MODE" = finish ]; then
   fi
 
   purge_tailscale_identity
+  purge_previous_owner
 
   step "sysprep"
   : > /etc/machine-id                       # EMPTY, so each clone derives its own from SMBIOS
@@ -241,7 +295,8 @@ if [ "$MODE" = finish ]; then
   found=0
   for p in /home/*/.config/gh /home/*/.ssh /home/*/.aws /home/*/.git-credentials \
            /home/*/.docker/config.json /home/*/.local/share/keyrings /home/*/.pki \
-           /home/*/.a_secs; do
+           /home/*/.a_secs /etc/shadow- /etc/passwd- /var/log/installer \
+           /var/lib/cloud/instances; do
     [ -e "$p" ] && { echo "   FOUND: $p"; found=1; }
   done
   [ "$found" -eq 0 ] && echo "   clean"
