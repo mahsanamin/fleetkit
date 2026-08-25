@@ -12,16 +12,25 @@
 #   sudo bash /tmp/desk-golden-prep.sh --reseal   # turn an already-claimed clone back into
 #                                                 # a golden (better base: right size, no seed)
 #
+#   --name <hostname>    what the golden is renamed to (default desk-golden). A fleet with
+#                        both desktops and servers wants two goldens, so two names.
+#
 # Then, on the host:  qm shutdown <vmid> && qm template <vmid>
 #
 # Phase 1 copies the seed account's toolchain instead of reinstalling it: mise and its
 # runtimes are already on this disk, and a local copy takes seconds where a fresh
 # `mise use -g` re-downloads gigabytes.
 #
+# DESKTOP OR SERVER: every remote-desktop step is guarded by whether grdctl exists, not by a
+# flag. A server has no GNOME, and asking the operator to declare that is one more thing to
+# get wrong — the machine already knows. Everything else (the standard account, the toolchain
+# copy, the credential sweep, sysprep, the first-boot host-key unit) is identical either way.
+#
 set -euo pipefail
 
 STD_USER=ubuntu
 SEED=""                 # the original account to migrate away from, then delete
+GOLDEN_NAME=desk-golden # what --reseal renames the machine to
 GRD_DIR=/etc/gnome-remote-desktop
 GRD_OWNER=gnome-remote-desktop
 
@@ -29,12 +38,13 @@ MODE=setup
 [ "${1:-}" = "--finish" ] && MODE=finish
 [ "${1:-}" = "--reseal" ] && MODE=reseal
 
-# --seed <user> / --user <user> may appear in any position
+# --seed <user> / --user <user> / --name <host> may appear in any position
 args=("$@")
 for i in "${!args[@]}"; do
   case "${args[$i]}" in
     --seed) SEED="${args[$((i+1))]:-}" ;;
     --user) STD_USER="${args[$((i+1))]:-}" ;;
+    --name) GOLDEN_NAME="${args[$((i+1))]:-}" ;;
   esac
 done
 [ "$MODE" = setup ] && [ -z "$SEED" ] && { echo "ERROR: --seed <existing-user> is required for phase 1" >&2; exit 1; }
@@ -44,6 +54,9 @@ step() { echo; echo "== $*"; }
 
 [ "$(id -u)" -eq 0 ] || die "run with sudo"
 command -v qm >/dev/null 2>&1 && die "this is the Proxmox host, not the guest"
+
+# Detect, do not configure. A server golden runs the same workflow minus the RDP steps.
+has_rdp() { command -v grdctl >/dev/null 2>&1; }
 
 # A GNOME login keyring is encrypted with the password of whoever created it. Copying a home
 # directory carries it along, so the ORIGINAL owner's password unlocks it on the clone and
@@ -99,24 +112,31 @@ UNIT
 # than the current template: it already has the standard account, no seed account, and the
 # right disk size, so clones from it need no shrink.
 if [ "$MODE" = reseal ]; then
-  id "$STD_USER" >/dev/null 2>&1 || die "no '$STD_USER' account — this is not a desktop clone"
-  getent passwd "$SEED" >/dev/null && die "$SEED still exists here. Reseal a machine that has already had it removed."
+  id "$STD_USER" >/dev/null 2>&1 || die "no '$STD_USER' account — this machine was never prepared as a clone"
+  # `getent passwd "" && die` looks equivalent and is not: with no --seed it evaluates false,
+  # and under `set -e` a failing top-level AND-list exits the script. An `if` cannot do that.
+  if [ -n "$SEED" ] && getent passwd "$SEED" >/dev/null; then
+    die "$SEED still exists here. Reseal a machine that has already had it removed."
+  fi
 
   echo "This turns $(hostname) into a golden template base."
-  echo "It will be renamed, its identity wiped, and its RDP credentials cleared."
+  echo "It will be renamed to $GOLDEN_NAME and its identity wiped."
+  if has_rdp; then echo "Its RDP credentials will be cleared."; fi
   printf 'Proceed? [y/N] '
   read -r r; case "$r" in [yY]|[yY][eE][sS]) ;; *) echo aborted; exit 1 ;; esac
 
   purge_keyrings
   install_sshkeygen_unit
 
-  step "hostname -> desk-golden"
-  hostnamectl set-hostname desk-golden
-  sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdesk-golden/' /etc/hosts
+  step "hostname -> $GOLDEN_NAME"
+  hostnamectl set-hostname "$GOLDEN_NAME"
+  sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$GOLDEN_NAME/" /etc/hosts
 
-  step "clearing RDP credentials"
-  grdctl --system rdp clear-credentials 2>/dev/null || true
-  grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
+  if has_rdp; then
+    step "clearing RDP credentials"
+    grdctl --system rdp clear-credentials 2>/dev/null || true
+    grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
+  fi
 
   step "sysprep"
   : > /etc/machine-id
@@ -178,10 +198,12 @@ if [ "$MODE" = finish ]; then
   purge_keyrings
   install_sshkeygen_unit
 
-  step "clearing RDP credentials"
-  # A template must not carry a usable login. desk-claim sets these per machine.
-  grdctl --system rdp clear-credentials 2>/dev/null || true
-  grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
+  if has_rdp; then
+    step "clearing RDP credentials"
+    # A template must not carry a usable login. desk-claim sets these per machine.
+    grdctl --system rdp clear-credentials 2>/dev/null || true
+    grdctl --system status 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || true
+  fi
 
   step "sysprep"
   : > /etc/machine-id                       # EMPTY, so each clone derives its own from SMBIOS
@@ -229,7 +251,7 @@ SHELL_BIN=/bin/bash
 if id "$STD_USER" >/dev/null 2>&1; then
   echo "   exists already"
 else
-  useradd --create-home --shell "$SHELL_BIN" --comment "Desktop User" "$STD_USER"
+  useradd --create-home --shell "$SHELL_BIN" --comment "Fleet standard account" "$STD_USER"
   echo "   created with shell $SHELL_BIN"
 fi
 for g in sudo docker; do
@@ -241,7 +263,7 @@ SEED_HOME="$(getent passwd "$SEED" | cut -d: -f6 || true)"
 STD_HOME="$(getent passwd "$STD_USER" | cut -d: -f6)"
 
 if [ -n "$SEED_HOME" ] && [ -d "$SEED_HOME" ]; then
-  for item in .local .zshrc .bashrc .config/starship.toml .config/mise .default-cargo-crates; do
+  for item in .local .zshrc .bashrc .a_aliases .config/starship.toml .config/mise .default-cargo-crates; do
     if [ -e "$SEED_HOME/$item" ]; then
       mkdir -p "$(dirname "$STD_HOME/$item")"
       cp -a "$SEED_HOME/$item" "$STD_HOME/$item"
@@ -267,16 +289,21 @@ step "verifying the toolchain works as $STD_USER"
 sudo -u "$STD_USER" bash -lc 'command -v mise >/dev/null && mise --version' 2>/dev/null \
   | sed 's/^/   mise /' || echo "   WARNING: mise not on PATH for $STD_USER — check .zshrc/.bashrc"
 
-step "RDP certificate for this machine (CN=$(hostname))"
-openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
-  -subj "/O=homelab/CN=$(hostname)" \
-  -out /tmp/.gp.crt -keyout /tmp/.gp.key 2>/dev/null
-install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 644 /tmp/.gp.crt "$GRD_DIR/rdp-tls.crt"
-install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 600 /tmp/.gp.key "$GRD_DIR/rdp-tls.key"
-rm -f /tmp/.gp.crt /tmp/.gp.key
-grdctl --system rdp set-tls-cert "$GRD_DIR/rdp-tls.crt"
-grdctl --system rdp set-tls-key  "$GRD_DIR/rdp-tls.key"
-echo "   replaced — the source machine's private key is no longer on this disk"
+if has_rdp; then
+  step "RDP certificate for this machine (CN=$(hostname))"
+  openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
+    -subj "/O=homelab/CN=$(hostname)" \
+    -out /tmp/.gp.crt -keyout /tmp/.gp.key 2>/dev/null
+  install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 644 /tmp/.gp.crt "$GRD_DIR/rdp-tls.crt"
+  install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 600 /tmp/.gp.key "$GRD_DIR/rdp-tls.key"
+  rm -f /tmp/.gp.crt /tmp/.gp.key
+  grdctl --system rdp set-tls-cert "$GRD_DIR/rdp-tls.crt"
+  grdctl --system rdp set-tls-key  "$GRD_DIR/rdp-tls.key"
+  echo "   replaced — the source machine's private key is no longer on this disk"
+else
+  step "remote desktop"
+  echo "   no grdctl on this machine — server golden, skipping certificate and credentials"
+fi
 
 step "password for $STD_USER (temporary; the golden is only reachable by you)"
 read -r -s -p "   Password: " PW;  echo
@@ -285,11 +312,15 @@ read -r -s -p "   Repeat:   " PW2; echo
 [ "$PW" = "$PW2" ] || die "entries do not match"
 [ ${#PW} -ge 8 ]   || die "use at least 8 characters"
 printf '%s:%s\n' "$STD_USER" "$PW" | chpasswd
-grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1 \
-  && echo "   unix + RDP credentials set for $STD_USER" \
-  || { echo "   type them: username $STD_USER"; grdctl --system rdp set-credentials; }
+if has_rdp; then
+  grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1 \
+    && echo "   unix + RDP credentials set for $STD_USER" \
+    || { echo "   type them: username $STD_USER"; grdctl --system rdp set-credentials; }
+  systemctl restart gnome-remote-desktop.service || true
+else
+  echo "   unix password set for $STD_USER"
+fi
 unset PW PW2
-systemctl restart gnome-remote-desktop.service || true
 
 step "fleetkit commands"
 # Install the repo and ALL its commands, not just one script, so a clone arrives with
@@ -319,7 +350,9 @@ else
   else
     echo "   /tmp/desk-claim.sh not found either — the clone will have no desk-claim"
   fi
-  if [ -f /tmp/desk-rdp-watchdog.sh ]; then
+  if ! has_rdp; then
+    echo "   no remote desktop here, so no watchdog is needed"
+  elif [ -f /tmp/desk-rdp-watchdog.sh ]; then
     bash /tmp/desk-rdp-watchdog.sh --install 2>&1 | sed 's/^/   /' || \
       echo "   WARNING: watchdog install failed"
   else

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# desk-passwd.sh — change your desktop password WITHOUT breaking remote desktop.
+# desk-passwd.sh — change your password WITHOUT breaking remote desktop.
 #
 # Installed as /usr/local/bin/desk-passwd. Hand this to the person using the machine:
 #
@@ -14,6 +14,10 @@
 # holding the old one, remote login can then no longer start a session, and RDP fails with
 # an endless "connecting" loop that looks like a network fault. Asking once and writing
 # both makes them impossible to get out of step. See docs/remote-desktop-on-wayland.md.
+#
+# On a SERVER there is no grdctl and nothing to keep in step, so it sets the system password
+# and stops. Same command everywhere, so nobody has to remember which kind of machine they
+# are on.
 #
 set -euo pipefail
 
@@ -33,9 +37,15 @@ fi
 [ -n "$TARGET" ] || die "cannot tell which user to change — pass a username"
 
 id "$TARGET" >/dev/null 2>&1 || die "no such user: $TARGET"
-command -v grdctl >/dev/null 2>&1 || die "no grdctl — gnome-remote-desktop is not installed"
 
-echo "Changing the password for '$TARGET' (login AND remote desktop)."
+# Detect, do not configure: a server has no remote desktop to keep in step.
+has_rdp() { command -v grdctl >/dev/null 2>&1; }
+
+if has_rdp; then
+  echo "Changing the password for '$TARGET' (login AND remote desktop)."
+else
+  echo "Changing the password for '$TARGET' (console login and sudo)."
+fi
 echo
 
 read -r -s -p "New password: " P1; echo
@@ -46,17 +56,19 @@ echo
 [ "$P1" = "$P2" ]   || die "the two entries do not match, nothing was changed"
 [ ${#P1} -ge 8 ]    || die "use at least 8 characters"
 
-echo "== 1/2  system password"
+if has_rdp; then echo "== 1/2  system password"; else echo "== system password"; fi
 printf '%s:%s\n' "$TARGET" "$P1" | chpasswd
 echo "   done"
 
-echo "== 2/2  remote desktop credentials"
-# Prefer non-interactive; fall back to prompting if this grdctl wants it that way.
-if grdctl --system rdp set-credentials "$TARGET" "$P1" >/dev/null 2>&1; then
-  echo "   done"
-else
-  echo "   this grdctl needs them typed — enter '$TARGET' and the SAME password"
-  grdctl --system rdp set-credentials
+if has_rdp; then
+  echo "== 2/2  remote desktop credentials"
+  # Prefer non-interactive; fall back to prompting if this grdctl wants it that way.
+  if grdctl --system rdp set-credentials "$TARGET" "$P1" >/dev/null 2>&1; then
+    echo "   done"
+  else
+    echo "   this grdctl needs them typed — enter '$TARGET' and the SAME password"
+    grdctl --system rdp set-credentials
+  fi
 fi
 
 unset P1 P2
@@ -69,21 +81,31 @@ if [ -n "$TARGET_HOME" ] && [ -d "$TARGET_HOME" ]; then
   chown "$TARGET:$TARGET" "$TARGET_HOME/.config/desk-passwd-done"
 fi
 
-systemctl restart gnome-remote-desktop.service
+if has_rdp; then
+  systemctl restart gnome-remote-desktop.service
 
-echo
-echo "== verify"
-if ss -tlnp | grep -q ':3389'; then
-  ss -tlnp | grep ':3389' | sed 's/^/   /'
-else
-  echo "   NOTHING LISTENING ON 3389"
-  echo "   check: journalctl -u gnome-remote-desktop -n 30 --no-pager"
-fi
+  echo
+  echo "== verify"
+  if ss -tlnp | grep -q ':3389'; then
+    ss -tlnp | grep ':3389' | sed 's/^/   /'
+  else
+    echo "   NOTHING LISTENING ON 3389"
+    echo "   check: journalctl -u gnome-remote-desktop -n 30 --no-pager"
+  fi
 
-cat <<NEXT
+  cat <<NEXT
 
 Password changed for $TARGET. Use it for BOTH the desktop login and the RDP connection.
 
 If you are connected right now, your current session keeps working, so reconnect once to
 confirm the new password really works before you rely on it.
 NEXT
+else
+  cat <<NEXT
+
+Password changed for $TARGET. It is the console and sudo password; SSH keys are unaffected.
+
+If you are connected over SSH right now, that session keeps working either way — open a
+second one and run 'sudo -k; sudo true' to confirm the new password before you rely on it.
+NEXT
+fi

@@ -87,6 +87,27 @@ them** — Ubuntu creates host keys at package-install time. So `sshd` refuses t
 clone is only reachable through the console. `--finish` installs a one-shot unit that runs
 `ssh-keygen -A` when the keys are missing.
 
+## A server golden is the same workflow, minus the remote desktop
+
+Nothing above is desktop-specific except the RDP steps, so none of it is duplicated for
+servers. `desk-golden-prep`, `desk-claim` and `desk-passwd` all ask the machine whether
+`grdctl` exists and skip the certificate, the GRD credentials and the `:3389` check when it
+does not. There is no `--server` flag on purpose: a flag is one more thing to get wrong, and
+the machine already knows what it is.
+
+```bash
+sudo desk-golden-prep --seed <original-user>       # identical
+sudo desk-golden-prep --finish                     # identical
+sudo desk-golden-prep --reseal --name srv-golden   # --name, because two goldens need two names
+# in each instance:
+sudo desk-claim <person> --prefix srv-             # hostname srv-<person>, no RDP steps
+```
+
+What changes on a server: `desk-claim` verifies **sshd on :22** instead of GRD on :3389,
+because SSH is then the only way in, and the summary hands you an `ssh` line rather than an
+RDP address. The password it sets is for the console and `sudo`; keys are added afterwards
+with `ssh-copy-id`.
+
 ## Then each instance is two commands
 
 ```bash

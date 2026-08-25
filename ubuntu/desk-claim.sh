@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# desk-claim.sh — turn a fresh clone into a named person's desktop.
+# desk-claim.sh — turn a fresh clone into a named person's machine.
 #
 # Runs INSIDE the clone, as root. Installed as /usr/local/bin/desk-claim.
 #
 #   sudo desk-claim <person>                        # hostname becomes desk-<person>
 #   sudo desk-claim <person> --hostname <hostname>  # if the two should differ
-#   sudo desk-claim <person> --prefix box-         # or change just the prefix
+#   sudo desk-claim <person> --prefix srv-          # or change just the prefix
+#
+# DESKTOP OR SERVER: the remote-desktop half runs only where grdctl exists. On a server there
+# is no GNOME, so this sets the hostname, identity and password and stops there. The name is
+# historical — it claims any clone, not only a desktop.
 #
 # Every instance uses the SAME login account (default 'ubuntu'), set up once in the golden
 # with its runtimes and dotfiles already in place. The isolation boundary is the VM, not the
@@ -43,7 +47,7 @@ while [ $# -gt 0 ]; do
     --user)      STD_USER="${2:?}"; shift 2 ;;
     --prefix)    PREFIX="${2:?}"; shift 2 ;;
     --no-reboot) NO_REBOOT=1; shift ;;
-    -h|--help)   sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,24p' "$0"; exit 0 ;;
     -*)          die "unknown option: $1" ;;
     *)           [ -z "$PERSON" ] && PERSON="$1" || die "unexpected argument: $1"; shift ;;
   esac
@@ -61,8 +65,11 @@ if [ -f /etc/desk-no-claim ]; then
        Remove it only if you truly mean it."
 fi
 
-command -v grdctl  >/dev/null 2>&1 || die "no grdctl — gnome-remote-desktop is not installed"
-command -v openssl >/dev/null 2>&1 || die "no openssl"
+# Detect, do not configure: a server has no grdctl and needs none of the RDP steps below.
+has_rdp() { command -v grdctl >/dev/null 2>&1; }
+if has_rdp; then
+  command -v openssl >/dev/null 2>&1 || die "no openssl — needed for the RDP certificate"
+fi
 
 case "$PERSON" in
   [a-z]*) : ;;
@@ -125,7 +132,11 @@ fi
 # ---------------------------------------------------------------- password
 
 step "password for $STD_USER"
-echo "   Used for BOTH the desktop login and RDP: GRD performs a real login with it."
+if has_rdp; then
+  echo "   Used for BOTH the desktop login and RDP: GRD performs a real login with it."
+else
+  echo "   Used for console login and sudo. SSH keys are added per person afterwards."
+fi
 echo "   $PERSON replaces it later with 'desk-passwd'."
 echo
 read -r -s -p "   Password: " PW;  echo
@@ -140,47 +151,63 @@ echo "   unix password set"
 
 # ---------------------------------------------------------------- RDP
 
-step "RDP certificate (CN=$NEWHOST)"
-openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
-  -subj "/O=homelab/CN=$NEWHOST" \
-  -out /tmp/.dc.crt -keyout /tmp/.dc.key 2>/dev/null
+if has_rdp; then
+  step "RDP certificate (CN=$NEWHOST)"
+  openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
+    -subj "/O=homelab/CN=$NEWHOST" \
+    -out /tmp/.dc.crt -keyout /tmp/.dc.key 2>/dev/null
 
-# install sets owner and mode in one step. GRD reports healthy and silently never listens if
-# the daemon does not own these — see docs/remote-desktop-on-wayland.md.
-install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 644 /tmp/.dc.crt "$CERT"
-install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 600 /tmp/.dc.key "$KEY"
-rm -f /tmp/.dc.crt /tmp/.dc.key
-ls -l "$CERT" "$KEY" | sed 's/^/   /'
+  # install sets owner and mode in one step. GRD reports healthy and silently never listens if
+  # the daemon does not own these — see docs/remote-desktop-on-wayland.md.
+  install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 644 /tmp/.dc.crt "$CERT"
+  install -o "$GRD_OWNER" -g "$GRD_OWNER" -m 600 /tmp/.dc.key "$KEY"
+  rm -f /tmp/.dc.crt /tmp/.dc.key
+  ls -l "$CERT" "$KEY" | sed 's/^/   /'
 
-grdctl --system rdp set-tls-cert "$CERT"
-grdctl --system rdp set-tls-key  "$KEY"
-grdctl --system rdp enable
+  grdctl --system rdp set-tls-cert "$CERT"
+  grdctl --system rdp set-tls-key  "$KEY"
+  grdctl --system rdp enable
 
-step "RDP credentials"
-if grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1; then
-  echo "   set to '$STD_USER', matching the Unix password"
+  step "RDP credentials"
+  if grdctl --system rdp set-credentials "$STD_USER" "$PW" >/dev/null 2>&1; then
+    echo "   set to '$STD_USER', matching the Unix password"
+  else
+    echo "   this grdctl wants them typed — enter '$STD_USER' and the SAME password"
+    grdctl --system rdp set-credentials
+  fi
+
+  systemctl enable --now gnome-remote-desktop.service >/dev/null 2>&1 || true
+  systemctl restart gnome-remote-desktop.service
 else
-  echo "   this grdctl wants them typed — enter '$STD_USER' and the SAME password"
-  grdctl --system rdp set-credentials
+  step "remote desktop"
+  echo "   not installed — server, so no certificate and no RDP credentials"
 fi
 unset PW PW2
-
-systemctl enable --now gnome-remote-desktop.service >/dev/null 2>&1 || true
-systemctl restart gnome-remote-desktop.service
 
 # ---------------------------------------------------------------- verify
 
 step "verification"
-if ss -tlnp | grep -q ':3389'; then
-  ss -tlnp | grep ':3389' | sed 's/^/   /'
+if has_rdp; then
+  if ss -tlnp | grep -q ':3389'; then
+    ss -tlnp | grep ':3389' | sed 's/^/   /'
+  else
+    echo "   NOTHING LISTENING ON 3389"
+    echo "   check: journalctl -u gnome-remote-desktop -n 30 --no-pager"
+    echo "   most likely the certificate ownership above"
+  fi
 else
-  echo "   NOTHING LISTENING ON 3389"
-  echo "   check: journalctl -u gnome-remote-desktop -n 30 --no-pager"
-  echo "   most likely the certificate ownership above"
+  # On a server SSH is the only way in, so its absence is the equivalent emergency.
+  if ss -tlnp | grep -q ':22 '; then
+    ss -tlnp | grep ':22 ' | sed 's/^/   /'
+  else
+    echo "   NOTHING LISTENING ON 22 — this machine has no way in but the console"
+    echo "   check: systemctl status ssh; ls -l /etc/ssh/ssh_host_*"
+  fi
 fi
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-cat <<SUMMARY
+if has_rdp; then
+  cat <<SUMMARY
 
 $NEWHOST is ready for $PERSON.
    RDP to     ${IP:-<no address yet>}:3389
@@ -193,6 +220,20 @@ REBOOT NOW and verify RDP from cold. A live session works even when credentials 
 the failure only appears when the machine must build a session from nothing.
 Then give this machine a static DHCP reservation on your router.
 SUMMARY
+else
+  cat <<SUMMARY
+
+$NEWHOST is ready for $PERSON.
+   ssh        $STD_USER@${IP:-<no address yet>}
+   login      $STD_USER + the password just set (console and sudo)
+
+Add their SSH key with ssh-copy-id, and tell them to run 'desk-passwd' to set their own
+password. Then give this machine a static DHCP reservation on your router.
+
+REBOOT NOW and check it comes back on its own before you rely on it: a clone that boots
+once is not the same as a clone that boots.
+SUMMARY
+fi
 
 if [ "$NO_REBOOT" -eq 1 ]; then
   echo

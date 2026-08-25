@@ -88,7 +88,7 @@ cat <<'NEXT'
 
 NEXT, and do not skip it:
   1. Copy the dump OFF this host. A backup on the machine it backs up is not a backup.
-  2. Verify RDP into the source VM still works.
+  2. Verify you can still reach the source VM (RDP for a desktop, SSH for a server).
   3. Build the golden from this dump:
        ./desk-instance.sh --from-dump <file> --vmid 9000 --name golden
 NEXT
