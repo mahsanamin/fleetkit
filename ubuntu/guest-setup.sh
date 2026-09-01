@@ -5,7 +5,7 @@
 # Runs INSIDE the guest, as your normal user (it uses sudo itself).
 #
 #   ./guest-setup.sh                          # base + shell, green prompt (VM convention)
-#   ./guest-setup.sh --colour cyan            # a container
+#   ./guest-setup.sh --colour cyan            # any colour you like, see --help
 #   ./guest-setup.sh --label BUILD-BOX-01     # show a name instead of the hostname
 #   ./guest-setup.sh --docker                 # ...and Docker
 #   ./guest-setup.sh --docker --mise          # ...and the runtime manager
@@ -307,6 +307,8 @@ Done on $(hostname) for user $TUSER.
 
 Log out and back in for the shell and any group changes. To try the prompt now:  zsh
 
-Prompt colours by convention — host red, LXC cyan, VM green — so a glance tells you which
-machine you are on before you run something you cannot undo.
+The prompt is coloured so a glance tells you which machine you are on before you run
+something you cannot undo. What each colour MEANS is yours to decide: by machine type, by
+owner, by environment. Pick one axis and keep it, and give the machines where a mistake is
+unrecoverable the colour you will not miss.
 NEXT

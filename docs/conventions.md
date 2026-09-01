@@ -6,13 +6,27 @@ each one exists for a reason that is easy to forget.
 ## Prompt colour tells you which machine you are on
 
 ```bash
-ubuntu/guest-setup.sh --colour red     # the hypervisor — nothing here is disposable
-ubuntu/guest-setup.sh --colour cyan    # containers
-ubuntu/guest-setup.sh --colour green   # VMs
+ubuntu/guest-setup.sh --colour red      # whatever you decide red means
+ubuntu/guest-setup.sh --colour yellow
+ubuntu/guest-setup.sh --colour green
 ```
 
 The point is not decoration. When you have six terminals open and one of them is the
 hypervisor, the prompt is what stops you running a destructive command in the wrong place.
+
+**What each colour means is yours, and this repo deliberately does not say.** Machine type
+(host / container / VM), owner, environment, and customer are all reasonable axes, and which
+one earns its keep depends on how you actually get confused. Two things matter more than the
+mapping:
+
+- **Pick one axis and keep it.** A colour that means two things means nothing.
+- **Spend your loudest colour where a mistake is unrecoverable**, which is usually the
+  hypervisor and whatever host carries your only way back in. Colouring six disposable VMs
+  and leaving those two plain is the common mistake, and it inverts the whole point.
+
+An earlier version of this file prescribed red/cyan/green for host/LXC/VM, and the script
+printed that on every run. That is one person's preference and it does not belong in a
+generic repo.
 
 **Valid colours:** `black red green yellow blue purple cyan white`, their `bright-` variants,
 a hex like `"#ff8800"`, or a 0–255 index. Starship calls magenta **`purple`** — an unknown name
