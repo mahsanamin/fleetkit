@@ -111,6 +111,16 @@ purge_tailscale_identity() {
 purge_previous_owner() {
   step "traces of the previous owner"
 
+  # A home directory whose owner has no passwd entry is debris from a deleted account, and it
+  # still carries that person's name in the path. Seen on both goldens: deluser removed the
+  # account, then something running as the old uid recreated ~/.cache underneath it.
+  for h in /home/*; do
+    [ -d "$h" ] || continue
+    if ! getent passwd "$(basename "$h")" >/dev/null 2>&1; then
+      rm -rf "$h"; echo "   removed orphaned $h (no such account)"
+    fi
+  done
+
   for f in /etc/passwd- /etc/shadow- /etc/group- /etc/gshadow- /etc/subuid- /etc/subgid-; do
     [ -e "$f" ] || continue
     shred -u "$f" 2>/dev/null || rm -f "$f"
