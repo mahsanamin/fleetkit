@@ -58,6 +58,7 @@ desk-image:proxmox/desk-image.sh
 desk-instance:proxmox/desk-instance.sh
 desk-shrink:proxmox/desk-shrink.sh
 pve-halt:proxmox/pve-halt.sh
+fleet-memlog:proxmox/fleet-memlog.py
 "
 # assets that are not commands: name -> repo path : destination
 ASSETS="

@@ -22,8 +22,9 @@ ubuntu/     guest-setup.sh  desk-golden-prep.sh  desk-claim.sh
             desk-passwd.sh  desk-hint.sh  desk-passwd.desktop
             desk-rdp-watchdog.sh  desk-crash-trap.sh
 proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
+            fleet-memlog.py   <- the one Python script here, see below
 docs/       remote-desktop-on-wayland.md  diagnosing-a-frozen-guest.md
-            golden-images.md  shrinking-a-disk.md
+            golden-images.md  shrinking-a-disk.md  sizing-guest-memory.md
             conventions.md  gotchas.md
 bootstrap.sh     one-command entry point: fetches this repo as a tarball, runs guest-setup.sh
 fleet-install.sh installs THIS REPO as system commands, on a guest or a hypervisor
@@ -31,6 +32,17 @@ fleet-install.sh installs THIS REPO as system commands, on a guest or a hypervis
 
 `bootstrap.sh` is fetched by `curl` on machines with **no credentials of any kind**. That is
 the whole reason this repo is public — never add a step to it that needs a login.
+
+## One script is Python, and why
+
+Everything here is bash except **`proxmox/fleet-memlog.py`**. It reads `/proc/meminfo` back out
+of every guest through `qm guest exec`, which returns **JSON**, and it computes percentiles over
+a CSV history. Parsing JSON in bash without `jq` (not installed on a stock Proxmox host) is
+fragile in exactly the way that produces wrong numbers quietly, and wrong numbers are the whole
+failure mode this script exists to avoid. `python3` is present on a Proxmox host.
+
+If you add another script, default to bash. Reach for Python only when the input is structured
+and getting it wrong would be silent.
 
 ## This repo is public. Keep it generic.
 
