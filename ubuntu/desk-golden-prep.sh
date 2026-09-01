@@ -74,7 +74,12 @@ purge_keyrings() {
   for d in /home/*/.a_secs; do
     [ -e "$d" ] && { rm -f "$d"; echo "   removed $d (per-machine secrets)"; }
   done
-  for d in /home/*/.pki /home/*/.config/google-chrome /home/*/.mozilla; do
+  # ~/.pki is the OBVIOUS location. The NSS store also lives at ~/.local/share/pki, which a
+  # `.local` copy carries along — found on the desktop golden 2026-09-01, three purges in, still
+  # holding the previous owner's nssdb. And `.local/.local` is real: cp -a of a directory into an
+  # existing one of the same name nests it, so a re-run buries a second copy one level down.
+  for d in /home/*/.pki /home/*/.local/share/pki /home/*/.local/.local \
+           /home/*/.config/google-chrome /home/*/.mozilla; do
     [ -e "$d" ] && { rm -rf "$d"; echo "   removed $d"; }
   done
   return 0
@@ -377,6 +382,10 @@ if [ -n "$SEED_HOME" ] && [ -d "$SEED_HOME" ]; then
   for item in .local .zshrc .bashrc .a_aliases .config/starship.toml .config/mise .default-cargo-crates; do
     if [ -e "$SEED_HOME/$item" ]; then
       mkdir -p "$(dirname "$STD_HOME/$item")"
+      # Clear the destination first: `cp -a src/.local dst/.local` with dst/.local ALREADY there
+      # copies INTO it, giving ~/.local/.local — which then hides a second copy of everything
+      # from every purge that looks one level up. Seen for real on the desktop golden.
+      rm -rf "$STD_HOME/$item"
       cp -a "$SEED_HOME/$item" "$STD_HOME/$item"
       echo "   copied $item"
     fi
