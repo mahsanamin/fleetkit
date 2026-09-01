@@ -126,6 +126,15 @@ purge_previous_owner() {
     fi
   done
 
+  # GNOME's AccountsService keeps a file per user, NAMED after the user, outside /home and
+  # outside /etc — so every purge aimed at those two walked past it. Same orphan rule: no
+  # passwd entry, no reason to keep it.
+  for f in /var/lib/AccountsService/users/* /var/lib/AccountsService/icons/*; do
+    [ -e "$f" ] || continue
+    getent passwd "$(basename "$f")" >/dev/null 2>&1 && continue
+    rm -f "$f"; echo "   removed $f (AccountsService record for a deleted account)"
+  done
+
   for f in /etc/passwd- /etc/shadow- /etc/group- /etc/gshadow- /etc/subuid- /etc/subgid-; do
     [ -e "$f" ] || continue
     shred -u "$f" 2>/dev/null || rm -f "$f"
