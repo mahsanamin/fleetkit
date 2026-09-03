@@ -53,6 +53,18 @@ And you can always tell what a machine is running:
 readlink -f $(command -v desk-claim)
 ```
 
+## Forgot the command?
+
+```bash
+fleet                # every fleetkit command on this machine, one line each
+fleet guest-setup    # the full help for one of them
+```
+
+It reads what is actually linked into `/usr/local/bin` on the machine you are sitting at, so a
+Mac shows one command and a hypervisor shows thirteen, and it says whether the repo is behind
+`origin`. The two worth memorising are in its footer: `sudo fleet-update` to take the latest,
+`sudo fleet-install --apply` to install or repair.
+
 ## The halves
 
 You can use any one of them on its own.

@@ -33,6 +33,7 @@ proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
 docs/       remote-desktop-on-wayland.md  diagnosing-a-frozen-guest.md
             golden-images.md  shrinking-a-disk.md  sizing-guest-memory.md
             conventions.md  gotchas.md
+fleet.sh         the index: what commands THIS machine has, and what each one does
 bootstrap.sh     one-command entry point: fetches this repo as a tarball, runs guest-setup.sh
 fleet-install.sh installs THIS REPO as system commands, on a guest or a hypervisor
 ```
@@ -76,6 +77,11 @@ question a scp'd copy can never answer. A broken symlink is loud; a stale copy i
 
 So: **if you add a script people run as a command, add it to `fleet-install.sh`.** A script the
 README calls by bare name, with nothing installing it, is a promise the repo does not keep.
+
+**Keep line 3 of every script in the form `# name.sh — what it does`.** `fleet` builds its
+index by reading that line out of each installed command, so a new script lists itself and
+there is no second list to fall out of step. Change the shape of that line and the command
+appears with a blank description.
 
 `/opt` and not a home directory, because `desk-golden-prep` deletes the seed account *and its
 home* — a checkout inside it is destroyed and no clone inherits fleetkit.

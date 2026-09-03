@@ -44,6 +44,7 @@ SRC_ROOT="$REPO"   # where files are READ for planning; links always point at $R
 
 # command name -> path inside the repo
 GUEST_CMDS="
+fleet:fleet.sh
 desk-claim:ubuntu/desk-claim.sh
 desk-passwd:ubuntu/desk-passwd.sh
 desk-golden-prep:ubuntu/desk-golden-prep.sh
@@ -57,6 +58,7 @@ fleet-install:fleet-install.sh
 # prompt worth keeping; a Mac has neither. mac-setup.sh is the small overlap: same colour
 # vocabulary, same aliases file, nothing that replaces what is already set up.
 MAC_CMDS="
+fleet:fleet.sh
 mac-setup:macos/mac-setup.sh
 fleet-update:fleet-install.sh
 fleet-install:fleet-install.sh
