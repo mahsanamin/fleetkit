@@ -53,16 +53,37 @@ And you can always tell what a machine is running:
 readlink -f $(command -v desk-claim)
 ```
 
-## The two halves
+## The halves
 
-You can use either one on its own.
+You can use any one of them on its own.
 
 | Folder | Use it to | Needs |
 |---|---|---|
 | **[`ubuntu/`](ubuntu/)** | Set up a machine | Any Ubuntu box. No hypervisor |
 | **[`proxmox/`](proxmox/)** | Turn that machine into many | A Proxmox host |
+| **[`macos/`](macos/)** | Colour and extend a Mac you already use | macOS, zsh |
 
 If you only ever set up one machine, `ubuntu/` is the whole point. Ignore the rest.
+
+### The Mac half is small on purpose
+
+`ubuntu/guest-setup.sh` sets up a fresh machine: packages, zsh, starship, a coloured prompt.
+It can be opinionated because a new guest has nothing worth keeping.
+
+A Mac is the opposite. It already has a shell someone chose and lives in. So
+`macos/mac-setup.sh` changes the colour of the prompt that is already there and leaves the
+theme alone, optionally installs the same base packages through brew, and reports what it
+will not touch rather than touching it.
+
+```bash
+macos/mac-setup.sh --colour orange          # recolour the existing prompt
+macos/mac-setup.sh --colour teal --brew     # ...and install the base packages
+macos/mac-setup.sh --colours                # the names, with what each resolves to
+macos/mac-setup.sh --check                  # say what it would do, change nothing
+```
+
+One vocabulary across all of them: `--colour orange` is the same orange on a Mac and on an
+Ubuntu guest, because both read [`lib/colours.sh`](lib/colours.sh).
 
 ### Making copies (the `proxmox/` half)
 

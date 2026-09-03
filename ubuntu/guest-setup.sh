@@ -62,81 +62,24 @@ while [ $# -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------- colours
-#
-# Starship knows eight names and their bright- variants. That is too few to tell a dozen
-# machines apart at a glance, and the eight it has are the ones every other tool also uses, so
-# they read as "a terminal colour" rather than "this machine". Everything below is a name for a
-# hex value, resolved here before it reaches starship.
-#
-# Chosen to survive a real terminal: nothing so dark it disappears on a dark background, and
-# nothing so pale it disappears on a light one. Neighbours in the list are deliberately far
-# apart in hue, because the whole point is telling two machines apart in a glance at a tmux
-# pane, not admiring the shade.
-palette_hex() {
-  case "$1" in
-    orange)    echo '#ff8700' ;;
-    amber)     echo '#ffc000' ;;
-    gold)      echo '#e0b000' ;;
-    lime)      echo '#a6e22e' ;;
-    mint)      echo '#5fd7af' ;;
-    teal)      echo '#00b3a4' ;;
-    sky)       echo '#56b6f7' ;;
-    azure)     echo '#0087ff' ;;
-    indigo)    echo '#6c7ae0' ;;
-    violet)    echo '#a970ff' ;;
-    lavender)  echo '#c3a6ff' ;;
-    magenta)   echo '#ff5fff' ;;   # starship's own name for this is 'purple'
-    pink)      echo '#ff79c6' ;;
-    coral)     echo '#ff7a5c' ;;
-    salmon)    echo '#ff9e80' ;;
-    crimson)   echo '#e0405e' ;;
-    brown)     echo '#b5651d' ;;
-    slate)     echo '#90a4ae' ;;
-    grey|gray) echo '#b0b0b0' ;;
-    *) return 1 ;;
-  esac
-}
+# The names live in lib/colours.sh, shared with macos/mac-setup.sh so that `--colour orange`
+# means the same orange on a Mac as it does here. One definition, or the naming is pointless.
+LIB="$(cd "$(dirname "$0")/.." && pwd)/lib/colours.sh"
+[ -f "$LIB" ] || die "missing $LIB — this script needs the repo around it, not a lone copy.
+       Install properly: sudo fleet-install --apply, or fetch the repo with bootstrap.sh"
+. "$LIB"
 
-list_colours() {
-  echo "Named shades this script knows, each resolved to a hex value:"
-  for n in orange amber gold lime mint teal sky azure indigo violet lavender \
-           magenta pink coral salmon crimson brown slate grey; do
-    printf '   %-10s %s\n' "$n" "$(palette_hex "$n")"
-  done
-  echo
-  echo "Starship's own names, passed through untouched:"
-  echo "   black red green yellow blue purple cyan white, and a bright- variant of each"
-  echo
-  echo "Anything else: a hex like '#ff8800' (QUOTE it, or the shell eats it as a comment)"
-  echo "or a 0-255 terminal index like 208."
-}
-
-# Starship's palette. An unknown name is not an error to starship — it silently renders
-# unstyled, which looks like the colour flag did nothing. 'magenta' is the classic trap:
-# starship calls it 'purple', which is why the palette above defines it.
-valid_colour() {
-  case "$1" in
-    black|red|green|yellow|blue|purple|cyan|white) return 0 ;;
-    bright-black|bright-red|bright-green|bright-yellow) return 0 ;;
-    bright-blue|bright-purple|bright-cyan|bright-white) return 0 ;;
-    '#'*) return 0 ;;              # hex
-    [0-9]|[0-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]) return 0 ;;   # 256-colour index
-    *) return 1 ;;
-  esac
-}
 if [ "$LIST_COLOURS" -eq 1 ]; then list_colours; exit 0; fi
-
-# A named shade becomes its hex here, so everything downstream only ever sees something
-# starship understands. The name is kept for the summary line, because "orange" is what you
-# asked for and "#ff8700" is not what you want read back to you.
-if HEX="$(palette_hex "$COLOUR")"; then
-  COLOUR_NAME="$COLOUR"
-  COLOUR="$HEX"
-fi
 
 valid_colour "$COLOUR" || die "'$COLOUR' is not a colour this script knows.
        Run: $0 --colours     to see every name, including orange, teal and coral.
        Or pass a hex like '#ff8800' (quote it) or a 0-255 index like 208."
+
+# A named shade becomes its hex here, so everything downstream only ever sees something
+# starship understands. The name is kept for the summary line, because "orange" is what you
+# asked for and "#ff8700" is not what you want read back to you.
+resolve_colour "$COLOUR"
+COLOUR="$COLOUR_HEX"
 
 # Normally you run this as yourself and it sudos. With --for-user, root provisions someone
 # else's account — the unattended path, where there is nobody to answer a sudo prompt.

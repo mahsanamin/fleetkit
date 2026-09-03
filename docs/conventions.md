@@ -23,6 +23,10 @@ They are picked to survive a real terminal, not to look good on a colour wheel: 
 enough to vanish on a dark background, nothing pale enough to vanish on a light one, and
 neighbours far apart in hue, because the job is telling two machines apart at a glance.
 
+The same names work on a Mac: `macos/mac-setup.sh --colour orange` recolours the prompt you
+already have, without replacing your theme. Both halves read `lib/colours.sh`, which carries a
+hex for starship and a 256-colour index for zsh, so one word means one colour everywhere.
+
 A hex like `'#ff8800'` or a 0-255 index like `208` still works. **Quote a hex**, or the shell
 takes it as the start of a comment and the flag silently loses its argument.
 

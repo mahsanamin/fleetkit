@@ -9,8 +9,13 @@ useful separately:
 
 - **`ubuntu/`** — runs on the machine itself. Knows nothing about Proxmox and must stay that
   way: it has to work on a laptop, a container and bare metal.
+- **`macos/`** — runs on a Mac. Deliberately small: a Mac already has a shell someone set up
+  and cares about, so this half colours and extends it rather than replacing it. Nothing in
+  `ubuntu/` runs here, every script there calls `apt-get`, `systemctl` or `grdctl`.
 - **`proxmox/`** — runs on the hypervisor as root. The only half allowed to assume `qm`,
   `vzdump`, `pvesm` or LVM.
+- **`lib/`** — sourced, never run. Only for things two halves must agree on, today the colour
+  palette. If only one half needs it, it belongs in that half.
 
 `docs/` is not an afterthought. Every trap in there cost hours to find, and it is the reason
 someone else will use this repo.
@@ -21,6 +26,8 @@ someone else will use this repo.
 ubuntu/     guest-setup.sh  desk-golden-prep.sh  desk-claim.sh
             desk-passwd.sh  desk-hint.sh  desk-passwd.desktop
             desk-rdp-watchdog.sh  desk-crash-trap.sh
+macos/      mac-setup.sh
+lib/        colours.sh        <- sourced by both, so a colour name means one thing
 proxmox/    desk-image.sh  desk-instance.sh  desk-shrink.sh  pve-halt.sh
             fleet-memlog.py   <- the one Python script here, see below
 docs/       remote-desktop-on-wayland.md  diagnosing-a-frozen-guest.md

@@ -30,8 +30,8 @@
 # it, and clones inherit no fleetkit at all. /opt survives, so /opt is canonical. Working from
 # a checkout in your home is fine; this script still installs from /opt.
 #
-# Both halves, detected rather than configured: the ubuntu/ commands always, and the proxmox/
-# ones only where `qm` exists. The scripts keep fleetkit's separation — ubuntu/ still knows
+# Which half, detected rather than configured: on a Mac the one macos/ command, otherwise the
+# ubuntu/ commands, plus the proxmox/ ones where `qm` exists. The scripts keep fleetkit's separation — ubuntu/ still knows
 # nothing about Proxmox. Only this installer looks at both.
 #
 set -euo pipefail
@@ -51,6 +51,14 @@ desk-rdp-watchdog:ubuntu/desk-rdp-watchdog.sh
 desk-crash-trap:ubuntu/desk-crash-trap.sh
 fleet-update:fleet-install.sh
 guest-setup:ubuntu/guest-setup.sh
+fleet-install:fleet-install.sh
+"
+# macOS gets ONE command. The Linux guest half assumes apt-get and a fresh machine with no
+# prompt worth keeping; a Mac has neither. mac-setup.sh is the small overlap: same colour
+# vocabulary, same aliases file, nothing that replaces what is already set up.
+MAC_CMDS="
+mac-setup:macos/mac-setup.sh
+fleet-update:fleet-install.sh
 fleet-install:fleet-install.sh
 "
 HOST_CMDS="
@@ -94,6 +102,7 @@ case "$MODE" in
 esac
 
 is_host() { command -v qm >/dev/null 2>&1; }
+is_mac()  { [ "$(uname)" = "Darwin" ]; }
 acting()  { [ "$MODE" = apply ] || [ "$MODE" = update ]; }
 
 # --- 1. the repo ------------------------------------------------------------------------
@@ -167,6 +176,17 @@ link_cmd() {
 }
 
 install_cmds() {
+  if is_mac; then
+    # Nothing in ubuntu/ runs here: every one of those scripts calls apt-get, systemctl or
+    # grdctl. Linking them would put commands on the PATH that fail on their first line,
+    # which is worse than not having them.
+    step "macOS commands in $BIN"
+    for e in $MAC_CMDS; do link_cmd "${e%%:*}" "${e##*:}"; done
+    step "guest and hypervisor commands"
+    note "skipped — this is a Mac. ubuntu/ needs apt-get, proxmox/ needs qm"
+    return 0
+  fi
+
   step "guest commands in $BIN"
   for e in $GUEST_CMDS; do link_cmd "${e%%:*}" "${e##*:}"; done
 
@@ -200,6 +220,12 @@ install_cmds() {
 # stamp, then a login hint tells you. Taking the update stays a deliberate `sudo fleet-update`.
 install_notifier() {
   step "update notifier"
+  # systemd units and /etc/profile.d, neither of which exists on macOS. A Mac updates the
+  # same way, just told rather than reminded: sudo fleet-update.
+  if is_mac; then
+    note "skipped — no systemd here. Update with: sudo fleet-update"
+    return 0
+  fi
   if ! acting; then note "would install a daily fetch + login hint"; return 0; fi
 
   # Expand REPO deliberately on one line, keep the rest single-quoted. Escaping $ through two
@@ -262,6 +288,10 @@ EOF
 # is already symlinked above.
 install_watchdog() {
   step "RDP watchdog timer"
+  if is_mac; then
+    note "skipped — this is a Mac, there is no gnome-remote-desktop to watch"
+    return 0
+  fi
   if ! systemctl list-unit-files gnome-remote-desktop.service >/dev/null 2>&1; then
     note "skipped — gnome-remote-desktop is not installed, nothing to watch"
     return 0
