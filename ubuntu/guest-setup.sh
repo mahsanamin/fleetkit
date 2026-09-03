@@ -5,7 +5,9 @@
 # Runs INSIDE the guest, as your normal user (it uses sudo itself).
 #
 #   ./guest-setup.sh                          # base + shell, green prompt (VM convention)
-#   ./guest-setup.sh --colour cyan            # any colour you like, see --help
+#   ./guest-setup.sh --colour cyan            # any colour you like, see --colours
+#   ./guest-setup.sh --colour orange          # named shades beyond starship's eight
+#   ./guest-setup.sh --colours                # list every name this script knows
 #   ./guest-setup.sh --label BUILD-BOX-01     # show a name instead of the hostname
 #   ./guest-setup.sh --docker                 # ...and Docker
 #   ./guest-setup.sh --docker --mise          # ...and the runtime manager
@@ -37,6 +39,8 @@ FOR_USER=""
 DOCKER=0
 MISE=0
 CHECK=0
+LIST_COLOURS=0
+COLOUR_NAME=""
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 step() { echo; echo "== $*"; }
@@ -51,14 +55,65 @@ while [ $# -gt 0 ]; do
     --docker) DOCKER=1; shift ;;
     --mise)   MISE=1; shift ;;
     --check)  CHECK=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    --colours|--colors|--list-colours) LIST_COLOURS=1; shift ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 
+# ---------------------------------------------------------------- colours
+#
+# Starship knows eight names and their bright- variants. That is too few to tell a dozen
+# machines apart at a glance, and the eight it has are the ones every other tool also uses, so
+# they read as "a terminal colour" rather than "this machine". Everything below is a name for a
+# hex value, resolved here before it reaches starship.
+#
+# Chosen to survive a real terminal: nothing so dark it disappears on a dark background, and
+# nothing so pale it disappears on a light one. Neighbours in the list are deliberately far
+# apart in hue, because the whole point is telling two machines apart in a glance at a tmux
+# pane, not admiring the shade.
+palette_hex() {
+  case "$1" in
+    orange)    echo '#ff8700' ;;
+    amber)     echo '#ffc000' ;;
+    gold)      echo '#e0b000' ;;
+    lime)      echo '#a6e22e' ;;
+    mint)      echo '#5fd7af' ;;
+    teal)      echo '#00b3a4' ;;
+    sky)       echo '#56b6f7' ;;
+    azure)     echo '#0087ff' ;;
+    indigo)    echo '#6c7ae0' ;;
+    violet)    echo '#a970ff' ;;
+    lavender)  echo '#c3a6ff' ;;
+    magenta)   echo '#ff5fff' ;;   # starship's own name for this is 'purple'
+    pink)      echo '#ff79c6' ;;
+    coral)     echo '#ff7a5c' ;;
+    salmon)    echo '#ff9e80' ;;
+    crimson)   echo '#e0405e' ;;
+    brown)     echo '#b5651d' ;;
+    slate)     echo '#90a4ae' ;;
+    grey|gray) echo '#b0b0b0' ;;
+    *) return 1 ;;
+  esac
+}
+
+list_colours() {
+  echo "Named shades this script knows, each resolved to a hex value:"
+  for n in orange amber gold lime mint teal sky azure indigo violet lavender \
+           magenta pink coral salmon crimson brown slate grey; do
+    printf '   %-10s %s\n' "$n" "$(palette_hex "$n")"
+  done
+  echo
+  echo "Starship's own names, passed through untouched:"
+  echo "   black red green yellow blue purple cyan white, and a bright- variant of each"
+  echo
+  echo "Anything else: a hex like '#ff8800' (QUOTE it, or the shell eats it as a comment)"
+  echo "or a 0-255 terminal index like 208."
+}
+
 # Starship's palette. An unknown name is not an error to starship — it silently renders
 # unstyled, which looks like the colour flag did nothing. 'magenta' is the classic trap:
-# starship calls it 'purple'.
+# starship calls it 'purple', which is why the palette above defines it.
 valid_colour() {
   case "$1" in
     black|red|green|yellow|blue|purple|cyan|white) return 0 ;;
@@ -69,11 +124,19 @@ valid_colour() {
     *) return 1 ;;
   esac
 }
-for c in "$COLOUR"; do
-  valid_colour "$c" || die "'$c' is not a starship colour. Use one of:
-       black red green yellow blue purple cyan white, a bright- variant,
-       a hex like '#ff8800', or a 0-255 index. (starship calls magenta 'purple')"
-done
+if [ "$LIST_COLOURS" -eq 1 ]; then list_colours; exit 0; fi
+
+# A named shade becomes its hex here, so everything downstream only ever sees something
+# starship understands. The name is kept for the summary line, because "orange" is what you
+# asked for and "#ff8700" is not what you want read back to you.
+if HEX="$(palette_hex "$COLOUR")"; then
+  COLOUR_NAME="$COLOUR"
+  COLOUR="$HEX"
+fi
+
+valid_colour "$COLOUR" || die "'$COLOUR' is not a colour this script knows.
+       Run: $0 --colours     to see every name, including orange, teal and coral.
+       Or pass a hex like '#ff8800' (quote it) or a 0-255 index like 208."
 
 # Normally you run this as yourself and it sudos. With --for-user, root provisions someone
 # else's account — the unattended path, where there is nobody to answer a sudo prompt.
@@ -132,10 +195,12 @@ if [ "$CHECK" -ne 1 ]; then
     note "keeping the existing starship.toml, updating colours only"
   fi
 
-  python3 - "$THOME/.config/starship.toml" "$COLOUR" "$LABEL" <<'PYEOF'
+  python3 - "$THOME/.config/starship.toml" "$COLOUR" "$LABEL" "$COLOUR_NAME" <<'PYEOF'
 import sys, pathlib, re
 
+# argv[4] is the friendly name, empty when the colour was given as a hex or an index.
 path, colour, label = sys.argv[1], sys.argv[2], sys.argv[3]
+name = sys.argv[4] if len(sys.argv) > 4 else ""
 p = pathlib.Path(path)
 lines = p.read_text().splitlines()
 
@@ -182,7 +247,7 @@ head = [l for l in lines[:first_table] if not l.startswith("format =")]
 lines = ['format = "$hostname$directory$git_branch$git_status$cmd_duration$character"'] + head + lines[first_table:]
 
 p.write_text("\n".join(lines) + "\n")
-print(f"   prompt: {colour}" + (f", shown as {label}" if label else ""))
+print(f"   prompt: {name + ' (' + colour + ')' if name else colour}" + (f", shown as {label}" if label else ""))
 PYEOF
 
   # Per-machine aliases and secrets, sourced if present. Kept OUT of .zshrc itself so the

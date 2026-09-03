@@ -7,9 +7,24 @@ each one exists for a reason that is easy to forget.
 
 ```bash
 ubuntu/guest-setup.sh --colour red      # whatever you decide red means
-ubuntu/guest-setup.sh --colour yellow
-ubuntu/guest-setup.sh --colour green
+ubuntu/guest-setup.sh --colour orange
+ubuntu/guest-setup.sh --colour teal
+ubuntu/guest-setup.sh --colours         # every name it knows
 ```
+
+Starship itself knows eight colour names and a `bright-` variant of each. Sixteen is not many
+once you have a dozen machines, and those eight are the ones every other tool uses too, so they
+read as "a terminal colour" rather than "this machine". So `guest-setup.sh` carries its own
+names for hex values on top: orange, amber, gold, lime, mint, teal, sky, azure, indigo, violet,
+lavender, magenta, pink, coral, salmon, crimson, brown, slate, grey. `--colours` lists them
+with the hex each one resolves to.
+
+They are picked to survive a real terminal, not to look good on a colour wheel: nothing dark
+enough to vanish on a dark background, nothing pale enough to vanish on a light one, and
+neighbours far apart in hue, because the job is telling two machines apart at a glance.
+
+A hex like `'#ff8800'` or a 0-255 index like `208` still works. **Quote a hex**, or the shell
+takes it as the start of a comment and the flag silently loses its argument.
 
 The point is not decoration. When you have six terminals open and one of them is the
 hypervisor, the prompt is what stops you running a destructive command in the wrong place.
