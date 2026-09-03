@@ -64,7 +64,21 @@ done
 # ---------------------------------------------------------------- colours
 # The names live in lib/colours.sh, shared with macos/mac-setup.sh so that `--colour orange`
 # means the same orange on a Mac as it does here. One definition, or the naming is pointless.
-LIB="$(cd "$(dirname "$0")/.." && pwd)/lib/colours.sh"
+# $0 is the SYMLINK when run as an installed command (/usr/local/bin/guest-setup), so a bare
+# dirname gives /usr/local and ../lib misses by a mile. Walk the links to the real file first.
+# readlink -f would do it on Linux but not on macOS, and lib/ is shared with the macOS half.
+resolve_self() {
+  local self="$1" target
+  while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+      /*) self="$target" ;;
+      *)  self="$(dirname "$self")/$target" ;;
+    esac
+  done
+  cd "$(dirname "$self")" && pwd
+}
+LIB="$(dirname "$(resolve_self "$0")")/lib/colours.sh"
 [ -f "$LIB" ] || die "missing $LIB — this script needs the repo around it, not a lone copy.
        Install properly: sudo fleet-install --apply, or fetch the repo with bootstrap.sh"
 . "$LIB"

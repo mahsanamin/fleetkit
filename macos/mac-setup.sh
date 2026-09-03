@@ -23,7 +23,22 @@
 #
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# $0 is the SYMLINK when run as an installed command (/usr/local/bin/guest-setup), so a bare
+# dirname gives /usr/local and ../lib misses by a mile. Walk the links to the real file first.
+# readlink -f would do it on Linux but not on macOS, and lib/ is shared with the macOS half.
+resolve_self() {
+  local self="$1" target
+  while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+      /*) self="$target" ;;
+      *)  self="$(dirname "$self")/$target" ;;
+    esac
+  done
+  cd "$(dirname "$self")" && pwd
+}
+HERE="$(resolve_self "$0")"
+[ -f "$HERE/../lib/colours.sh" ] || { echo "ERROR: missing $HERE/../lib/colours.sh — this script needs the repo around it, not a lone copy." >&2; exit 1; }
 . "$HERE/../lib/colours.sh"
 
 COLOUR=""
