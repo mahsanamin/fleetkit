@@ -253,7 +253,11 @@ SECS
 # Unlock SSH keys once per boot (keychain keeps one agent alive across logins).
 if command -v keychain >/dev/null 2>&1; then
   _ak=()
-  for _f in ~/.ssh/*github* ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
+  # (N) is zsh's null glob qualifier: a pattern matching nothing expands to nothing instead
+  # of raising an error. Without it, a machine with no *github* key aborts ~/.zshrc on THIS
+  # line, and every line below it never runs. Silent, because starship and the aliases are
+  # already loaded by then, so the shell looks healthy while half its config is missing.
+  for _f in ~/.ssh/*github*(N) ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
     [ -f "$_f" ] && [[ "$_f" != *.pub ]] && _ak+=("$_f")
   done
   (( ${#_ak} )) && eval "$(keychain --eval --quiet "${_ak[@]}")"
